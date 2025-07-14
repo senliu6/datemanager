@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Card, Row, Col, Statistic, message } from 'antd';
 import * as echarts from 'echarts';
 import { CloudUploadOutlined, ClockCircleOutlined, TagOutlined, FileOutlined } from '@ant-design/icons';
-import axios from 'axios';
+import axios from '../util/axios';
 
 const Dashboard = () => {
   const dataChartRef = useRef(null);
@@ -16,6 +16,7 @@ const Dashboard = () => {
 
   const fetchStats = async () => {
     try {
+
       const response = await axios.get('/api/stats');
       const { totalFiles, monthlyStats } = response.data.data;
       
@@ -26,7 +27,7 @@ const Dashboard = () => {
 
       // 更新数据量统计图表
       if (dataChartRef.current) {
-        const months = monthlyStats.map(stat => `${stat._id.month}月`);
+        const months = monthlyStats.map(stat => `${stat.month}月`);
         const counts = monthlyStats.map(stat => stat.count);
 
         const dataChart = echarts.init(dataChartRef.current);

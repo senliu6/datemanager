@@ -1,0 +1,256 @@
+.episode-card {
+    background: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 16px;
+    transition: all 0.3s ease;
+}
+
+.episode-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 8px;
+    text-align: center;
+}
+
+.playback-area {
+    background: #f9f9f9;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 0.3s ease;
+}
+
+.playback-area:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.video-wrapper {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    height: 250px;
+    background: #000;
+    transition: transform 0.3s ease;
+}
+
+.video-wrapper:hover {
+    transform: scale(1.02);
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.video-player {
+    border-radius: 10px;
+    width: 100% !important;
+    height: 100% !important;
+    background: transparent !important;
+}
+
+.play-overlay-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.3s ease, background 0.3s ease;
+    z-index: 10;
+}
+
+.play-overlay-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.video-label {
+    padding: 8px;
+    font-size: 12px;
+    color: #fff;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.7);
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    z-index: 10;
+    transition: background 0.3s ease;
+}
+
+.video-label:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+.control-panel {
+    padding: 12px 16px;
+    background: linear-gradient(90deg, #f0f0f0, #e0e0e0);
+    border-radius: 10px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+.control-panel:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.play-pause-btn {
+    padding: 8px 16px;
+    background: #1890ff;
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.play-pause-btn:hover {
+    background: #40a9ff;
+    transform: scale(1.1);
+}
+
+.seek-bar {
+    flex-grow: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #d0d0d0;
+    cursor: pointer;
+    appearance: none;
+    outline: none;
+    transition: background 0.3s ease;
+}
+
+.seek-bar:hover {
+    background: #b0b0b0;
+}
+
+.seek-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #1890ff;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease;
+}
+
+.seek-bar::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.seek-bar::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #1890ff;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease;
+}
+
+.seek-bar::-moz-range-thumb:hover {
+    transform: scale(1.2);
+}
+
+.time-display {
+    font-size: 14px;
+    color: #555;
+    font-weight: 500;
+    margin-left: 8px;
+    min-width: 70px;
+    text-align: right;
+    transition: color 0.3s ease;
+}
+
+.time-display:hover {
+    color: #333;
+}
+
+.plot-container {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    transition: box-shadow 0.3s ease;
+}
+
+.plot-container:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.plot-container .js-plotly-plot {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.frame-data {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    margin-top: 16px;
+    transition: box-shadow 0.3s ease;
+}
+
+.frame-data:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.frame-table .ant-table-thead > tr > th {
+    background: #f0f5ff;
+    color: #1890ff;
+    font-weight: 500;
+}
+
+.frame-table .ant-table-tbody > tr > td {
+    padding: 8px;
+    color: #333;
+}
+
+.pointcloud-view {
+    background: #000000;
+    border-radius: 10px;
+    padding: 16px;
+    transition: box-shadow 0.3s ease;
+}
+
+.pointcloud-view:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.pointcloud-view h4 {
+    color: #ffffff;
+    margin-bottom: 8px;
+    font-weight: 600;
+}

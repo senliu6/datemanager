@@ -1,0 +1,123 @@
+/* 移除与 LeRobotEpisodeCard 相关的样式，仅保留 DataList 相关样式 */
+.custom-table {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.custom-table .ant-table-thead > tr > th {
+    background-color: #f0f2f5;
+    font-weight: 500;
+    color: #333;
+    border-bottom: 2px solid #e8e8e8;
+}
+
+.custom-table .ant-table-tbody > tr > td {
+    padding: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.custom-table .ant-table-tbody > tr:hover > td {
+    background-color: #fafafa;
+}
+
+.folder-name {
+    font-weight: bold;
+    color: #1890ff;
+    padding-left: 8px;
+}
+
+.file-name {
+    color: #2c3e50;
+    text-decoration: none;
+}
+
+.file-name:hover {
+    color: #1890ff;
+    text-decoration: underline;
+}
+
+.single-view-container {
+    padding: 16px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.episode-list {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.episode-list h3 {
+    margin-bottom: 12px;
+    color: #333;
+    font-size: 16px;
+}
+
+.episode-items {
+    list-style: none;
+    padding: 0;
+}
+
+.episode-item {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+    transition: background 0.3s ease;
+}
+
+.episode-item:hover,
+.episode-item.selected {
+    background: #e6f4ff;
+    color: #1890ff;
+}
+
+.no-data {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+}
+
+/* 控件样式 */
+.refresh-button,
+.clear-button {
+    border-radius: 4px;
+    padding: 0 12px;
+}
+
+.view-switch {
+    margin-left: 16px;
+}
+
+.search-input,
+.project-select {
+    border-radius: 4px;
+}
+
+.edit-modal .ant-modal-content {
+    border-radius: 8px;
+}
+
+.edit-modal .ant-modal-header {
+    background-color: #f0f2f5;
+    border-radius: 8px 8px 0 0;
+}
+
+.single-view-button {
+    border-radius: 4px;
+    padding: 0 12px;
+    background-color: #fff;
+    border-color: #d9d9d9;
+    transition: all 0.3s ease;
+}
+
+.single-view-button:hover {
+    background-color: #f0f0f0;
+    border-color: #1890ff;
+    color: #1890ff;
+}
