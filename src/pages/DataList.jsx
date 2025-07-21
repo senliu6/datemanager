@@ -25,6 +25,7 @@ const DataList = () => {
     const [selectedEpisode, setSelectedEpisode] = useState(null);
 
     const [currentFolderPath, setCurrentFolderPath] = useState(null);
+    const [dataQuality, setDataQuality] = useState('medium');
 
     const fetchData = async () => {
         try {
@@ -76,32 +77,57 @@ const DataList = () => {
         }
     }, [viewMode, data, currentFolderPath]);
 
-    const fetchEpisodeData = (folderPath) => {
-        console.log('Fetching with folderPath:', folderPath);
+    const fetchEpisodeDataWithQuality = (folderPath, quality) => {
+        console.log('Fetching with folderPath:', folderPath, 'quality:', quality);
+        setLoading(true);
         axios
-            .post('/api/lerobot/parse', {folderPath})
+            .post('/api/lerobot/parse', {folderPath, quality})
             .then((res) => {
-                // console.log('API /api/lerobot/parse Response:', JSON.stringify(res.data.data, null, 2));
+                console.log('API /api/lerobot/parse Response:', res.data.data?.length, 'episodes');
                 if (!res.data.data || res.data.data.length === 0) {
                     message.warning('未找到有效的 episode 数据');
                     setEpisodesMeta([]);
+                    setSelectedEpisode(null);
                 } else {
                     const uniqueEpisodes = res.data.data.reduce((acc, ep) => {
                         if (!acc.find(item => item.key === ep.key)) {
-                            console.log('Episode:', ep.key, 'Pointcloud data:', ep.pointcloud_data);
+                            console.log(`Episode: ${ep.key}, Frame count: ${ep.frame_count}, Quality: ${quality}`);
+                            console.log('Pointcloud lengths:', {
+                                cam_top: ep.pointcloud_data?.cam_top?.length || 0,
+                                cam_right_wrist: ep.pointcloud_data?.cam_right_wrist?.length || 0
+                            });
                             acc.push(ep);
                         }
                         return acc;
                     }, []);
+                    
+                    // 按episode索引排序
+                    uniqueEpisodes.sort((a, b) => {
+                        const aIndex = parseInt(a.key.replace('episode_', ''));
+                        const bIndex = parseInt(b.key.replace('episode_', ''));
+                        return aIndex - bIndex;
+                    });
+                    
                     setEpisodesMeta(uniqueEpisodes);
-                    setSelectedEpisode(uniqueEpisodes[0] || null);
+                    // 保持当前选中的episode，如果不存在则选择第一个
+                    const currentKey = selectedEpisode?.key;
+                    const newSelected = uniqueEpisodes.find(ep => ep.key === currentKey) || uniqueEpisodes[0] || null;
+                    setSelectedEpisode(newSelected);
                 }
             })
             .catch((err) => {
                 console.error('加载 LeRobot 数据失败:', err);
                 setEpisodesMeta([]);
+                setSelectedEpisode(null);
                 message.error('加载数据集失败: ' + err.message);
+            })
+            .finally(() => {
+                setLoading(false);
             });
+    };
+
+    const fetchEpisodeData = (folderPath) => {
+        fetchEpisodeDataWithQuality(folderPath, dataQuality);
     };
 
 
@@ -373,8 +399,19 @@ const DataList = () => {
         return result;
     };
 
-    const handleEpisodeSelect = (episode) => {
-        setSelectedEpisode(episode);
+    const handleEpisodeSelect = async (episode) => {
+        console.log('选择episode:', episode.key, '当前质量:', dataQuality);
+        
+        // 如果episode数据是当前质量级别的，直接使用
+        const currentEpisodeInList = episodesMeta.find(ep => ep.key === episode.key);
+        if (currentEpisodeInList) {
+            setSelectedEpisode(currentEpisodeInList);
+            console.log('使用列表中的episode数据:', currentEpisodeInList.key, '帧数:', currentEpisodeInList.frame_count);
+        } else {
+            // 如果找不到，重新获取数据
+            console.log('未找到对应episode，重新获取数据');
+            setSelectedEpisode(episode);
+        }
     };
 
     const rowSelection = {
@@ -553,7 +590,30 @@ const DataList = () => {
         <div className="single-view-container">
             <Row gutter={16}>
                 <Col span={3} className="episode-list">
-                    <h3>Episode 列表 (Folder: {currentFolderPath})</h3>
+                    <div style={{ marginBottom: 16 }}>
+                        <h3>Episode 列表</h3>
+                        <div style={{ fontSize: '12px', color: '#666', marginBottom: 8 }}>
+                            Folder: {currentFolderPath}
+                        </div>
+                        <Select
+                            value={dataQuality}
+                            onChange={(value) => {
+                                console.log('切换质量级别:', value);
+                                setDataQuality(value);
+                                if (currentFolderPath) {
+                                    // 使用新的质量值直接调用，避免状态更新延迟
+                                    fetchEpisodeDataWithQuality(currentFolderPath, value);
+                                }
+                            }}
+                            style={{ width: '100%', marginBottom: 8 }}
+                            size="small"
+                        >
+                            <Select.Option value="low">低质量 (快速)</Select.Option>
+                            <Select.Option value="medium">中等质量 (平衡)</Select.Option>
+                            <Select.Option value="high">高质量 (详细)</Select.Option>
+                            <Select.Option value="full">完整数据 (最慢)</Select.Option>
+                        </Select>
+                    </div>
                     <div className="episode-items">
                         {episodesMeta.map((ep, idx) => {
                             console.log(`Episode ${idx} - Folder: ${ep.folderPath}, Key: ${ep.key}`); // 调试
@@ -600,23 +660,60 @@ const DataList = () => {
                 title="数据列表"
                 extra={
                     <div>
-                        <Button type="primary" onClick={fetchData}>
-                            刷新
-                        </Button>
-                        <Button style={{marginLeft: 16}} type="primary" danger icon={<DownloadOutlined/>}
-                                onClick={handleDownload}>
-                            下载
-                        </Button>
-                        <Button style={{marginLeft: 16}} danger onClick={handleClearDatabase}>
-                            清除数据库
-                        </Button>
-                        <Button
-                            style={{marginLeft: 16}}
-                            onClick={() => setViewMode(viewMode === 'single' ? 'list' : 'single')}
-                            className="single-view-button"
-                        >
-                            {viewMode === 'single' ? '返回列表' : '单条数据展示'}
-                        </Button>
+                        {viewMode === 'list' && (
+                            <>
+                                <Button type="primary" onClick={fetchData}>
+                                    刷新
+                                </Button>
+                                <Button style={{marginLeft: 16}} type="primary" danger icon={<DownloadOutlined/>}
+                                        onClick={handleDownload}>
+                                    下载
+                                </Button>
+                                <Button style={{marginLeft: 16}} danger onClick={handleClearDatabase}>
+                                    清除数据库
+                                </Button>
+                            </>
+                        )}
+                        {viewMode === 'single' && (
+                            <>
+                                <Button
+                                    type="default"
+                                    onClick={async () => {
+                                        // 清理当前数据集的所有缓存并重新加载
+                                        if (currentFolderPath) {
+                                            try {
+                                                setLoading(true);
+                                                // 清理所有质量级别的缓存
+                                                await axios.delete(`/api/lerobot/cache/${encodeURIComponent(currentFolderPath)}`);
+                                                // 清空当前数据
+                                                setEpisodesMeta([]);
+                                                setSelectedEpisode(null);
+                                                // 重新加载数据
+                                                fetchEpisodeData(currentFolderPath);
+                                                message.success(`已清理所有缓存并重新加载`);
+                                            } catch (error) {
+                                                console.error('清理缓存失败:', error);
+                                                message.error('清理缓存失败: ' + (error.response?.data?.message || error.message));
+                                            } finally {
+                                                setLoading(false);
+                                            }
+                                        }
+                                    }}
+                                    style={{ marginRight: 8 }}
+                                    size="small"
+                                    loading={loading}
+                                >
+                                    清理缓存
+                                </Button>
+                                <Button
+                                    type="primary"
+                                    onClick={() => setViewMode('list')}
+                                    className="back-to-list-button"
+                                >
+                                    返回列表
+                                </Button>
+                            </>
+                        )}
                     </div>
                 }
             >

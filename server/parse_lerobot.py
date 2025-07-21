@@ -74,7 +74,7 @@ def format_pointcloud_data(pointcloud_data: np.ndarray, max_points: int = 500) -
         logging.error(f"Error formatting pointcloud data: {e}")
         return []
 
-def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str) -> List[Dict[str, Any]]:
+def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str, max_frames: int = None, max_points: int = None) -> List[Dict[str, Any]]:
     episodes = []
     base_folder = folder_path.replace('\\', '/')
     logging.info(f"Starting parsing {len(files)} files, folderPath: {base_folder}")
@@ -126,11 +126,25 @@ def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str) -> List[D
                     video_duration = max(video_duration, duration)
             logging.info(f"Max video duration for {key}: {video_duration}s")
 
-            # 限制帧数
-            max_frames = 1000
-            frame_step = max(1, len(df) // max_frames)
-            df = df.iloc[::frame_step][:max_frames]
-            logging.info(f"Limiting to {max_frames} frames with step {frame_step}, actual rows: {len(df)}")
+            # 动态限制帧数
+            original_frame_count = len(df)
+            if max_frames is None:
+                # 根据数据量自动调整
+                if original_frame_count <= 2000:
+                    max_frames = original_frame_count  # 小数据集不降采样
+                elif original_frame_count <= 5000:
+                    max_frames = 2000  # 中等数据集适度降采样
+                else:
+                    max_frames = 3000  # 大数据集保留更多数据
+
+            if max_frames >= original_frame_count:
+                # 不需要降采样
+                frame_step = 1
+                logging.info(f"No frame downsampling needed, using all {original_frame_count} frames")
+            else:
+                frame_step = max(1, original_frame_count // max_frames)
+                df = df.iloc[::frame_step][:max_frames]
+                logging.info(f"Downsampling from {original_frame_count} to {max_frames} frames with step {frame_step}, actual rows: {len(df)}")
 
             # 提取时间戳并归一化
             if 'timestamp' not in df.columns:
@@ -170,11 +184,25 @@ def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str) -> List[D
                 raw_top = df['observation.pointcloud.cam_top'].tolist()
                 raw_wrist = df['observation.pointcloud.cam_right_wrist'].tolist()
 
+                # 动态调整点云采样数量
+                if max_points is None:
+                    # 根据帧数自动调整点云密度
+                    if len(df) <= 1000:
+                        points_per_frame = 2000  # 小数据集保留更多点云
+                    elif len(df) <= 2000:
+                        points_per_frame = 1500  # 中等数据集适度采样
+                    else:
+                        points_per_frame = 1000  # 大数据集保持原有采样
+                else:
+                    points_per_frame = max_points
+
+                logging.info(f"Using {points_per_frame} points per frame for pointcloud data")
+
                 cam_top_points = Parallel(n_jobs=4)(
-                    delayed(safe_format_pointcloud_data)(pc, 1000) for pc in raw_top
+                    delayed(safe_format_pointcloud_data)(pc, points_per_frame) for pc in raw_top
                 )
                 cam_right_wrist_points = Parallel(n_jobs=4)(
-                    delayed(safe_format_pointcloud_data)(pc, 1000) for pc in raw_wrist
+                    delayed(safe_format_pointcloud_data)(pc, points_per_frame) for pc in raw_wrist
                 )
 
                 logging.info(f"Pointcloud sampling complete - top: {len(cam_top_points)} frames, wrist: {len(cam_right_wrist_points)} frames, took {time.time() - start_time:.2f}s")
@@ -233,19 +261,105 @@ def main():
     parser = argparse.ArgumentParser(description='Parse LeRobot dataset files.')
     parser.add_argument('--files', nargs='+', required=True, help='List of files to parse with original names (format: path:original_name)')
     parser.add_argument('--folderPath', type=str, required=True, help='Base folder path for video files')
+    parser.add_argument('--max-frames', type=int, default=None, help='Maximum number of frames to process per episode (default: auto)')
+    parser.add_argument('--max-points', type=int, default=None, help='Maximum number of points per frame in pointcloud (default: auto)')
+    parser.add_argument('--quality', type=str, choices=['low', 'medium', 'high', 'full'], default='medium',
+                        help='Data quality preset: low(fast), medium(balanced), high(detailed), full(no sampling)')
     args = parser.parse_args()
 
-    files = [tuple(f.split(':')) for f in args.files]
-    episodes = parse_lerobot_data(files, args.folderPath)
+    # 根据质量预设调整参数
+    if args.quality == 'low':
+        max_frames = args.max_frames or 300
+        max_points = args.max_points or 300
+    elif args.quality == 'medium':
+        max_frames = args.max_frames or 800
+        max_points = args.max_points or 600
+    elif args.quality == 'high':
+        max_frames = args.max_frames or 1500
+        max_points = args.max_points or 1000
+    elif args.quality == 'full':
+        max_frames = args.max_frames  # None = 无限制，使用原始数据
+        max_points = args.max_points  # None = 无限制，使用原始点云
+    else:
+        max_frames = args.max_frames
+        max_points = args.max_points
 
-    # ✅ 安全地输出 JSON 数据
+    logging.info(f"Using quality preset: {args.quality}, max_frames: {max_frames}, max_points: {max_points}")
+
+    files = [tuple(f.split(':')) for f in args.files]
+    episodes = parse_lerobot_data(files, args.folderPath, max_frames, max_points)
+
+    # ✅ 优化数据输出，减少传输量
     try:
         serializable_episodes = convert_to_serializable(episodes)
+
+        # 智能数据大小管理
+        # 先估算数据大小，避免生成过大的JSON
+        estimated_size = 0
+        for episode in serializable_episodes:
+            # 估算每个episode的大小
+            frame_count = episode.get('frame_count', 0)
+            pointcloud_frames = len(episode.get('pointcloud_data', {}).get('cam_top', []))
+            avg_points_per_frame = len(episode.get('pointcloud_data', {}).get('cam_top', [{}])[0]) if pointcloud_frames > 0 else 0
+
+            # 估算大小：每个点约12字节（3个float），加上其他数据
+            estimated_episode_size = (pointcloud_frames * avg_points_per_frame * 12 * 2) + (frame_count * 100)  # 2个相机，额外数据
+            estimated_size += estimated_episode_size
+
+        estimated_mb = estimated_size / 1024 / 1024
+        logging.info(f"Estimated data size: {estimated_mb:.2f} MB")
+
+        # 如果估算大小超过400MB，进行智能压缩
+        if estimated_mb > 400:
+            logging.warning(f"Data size too large ({estimated_mb:.2f} MB), applying smart compression...")
+
+            # 根据质量级别进行不同程度的压缩
+            if args.quality == 'full':
+                # 完整质量：只压缩到合理大小，保持高质量
+                compression_factor = max(1, int(estimated_mb / 300))  # 目标300MB
+                logging.info(f"Full quality compression factor: {compression_factor}")
+            else:
+                # 其他质量：更激进的压缩
+                compression_factor = max(2, int(estimated_mb / 200))  # 目标200MB
+                logging.info(f"Standard compression factor: {compression_factor}")
+
+            compressed_episodes = []
+            for episode in serializable_episodes:
+                compressed_episode = {
+                    'key': episode['key'],
+                    'index': episode['index'],
+                    'folderPath': episode['folderPath'],
+                    'frame_count': episode['frame_count'],
+                    'video_paths': episode['video_paths'],
+                    'motor_data': {
+                        'time': episode['motor_data']['time'][::compression_factor],
+                        'motors': episode['motor_data']['motors'][::compression_factor]
+                    },
+                    'pointcloud_data': {
+                        'cam_top': [frame[::compression_factor] for frame in episode['pointcloud_data']['cam_top'][::compression_factor]],
+                        'cam_right_wrist': [frame[::compression_factor] for frame in episode['pointcloud_data']['cam_right_wrist'][::compression_factor]]
+                    }
+                }
+                compressed_episodes.append(compressed_episode)
+
+            serializable_episodes = compressed_episodes
+            logging.info(f"Applied compression factor {compression_factor}")
+
+        # 生成最终JSON
         json_str = json.dumps(serializable_episodes)
-        logging.info(f"Serialized JSON size: {len(json_str) / 1024 / 1024:.2f} MB")
-        print(json_str)
+        final_size_mb = len(json_str) / 1024 / 1024
+        logging.info(f"Final JSON size: {final_size_mb:.2f} MB")
+
+        # 如果还是太大，进行最后的安全检查
+        if final_size_mb > 450:  # Node.js字符串限制约512MB
+            logging.error(f"Data still too large ({final_size_mb:.2f} MB), cannot process safely")
+            print(json.dumps({"error": f"Data too large ({final_size_mb:.2f} MB), please use lower quality setting", "episodes": []}))
+        else:
+            print(json_str)
     except Exception as e:
         logging.error(f"Error serializing episodes to JSON: {e}")
+        # 输出错误信息而不是崩溃
+        print(json.dumps({"error": str(e), "episodes": []}))
 
 def safe_format_pointcloud_data(raw_pc, max_points=1000):
     try:

@@ -121,3 +121,18 @@
     border-color: #1890ff;
     color: #1890ff;
 }
+
+.back-to-list-button {
+    border-radius: 4px;
+    padding: 0 16px;
+    background-color: #1890ff;
+    border-color: #1890ff;
+    color: #fff;
+    transition: all 0.3s ease;
+}
+
+.back-to-list-button:hover {
+    background-color: #40a9ff;
+    border-color: #40a9ff;
+    color: #fff;
+}

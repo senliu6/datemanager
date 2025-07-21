@@ -11,7 +11,7 @@ const Login = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
-            const response = await axios.post('http://localhost:3001/api/login', {
+            const response = await axios.post('http://10.30.30.94:3001/api/login', {
                 username: values.username,
                 password: values.password,
                 remember: values.remember,
