@@ -1,0 +1,44 @@
+服务器运行在 0.0.0.0:3001
+本地访问: http://localhost:3001
+网络访问: http://10.30.30.94:3001
+SQLite 数据库连接成功
+SQLite 数据库连接成功
+SQLite 数据库连接成功
+SQLite 数据库连接成功
+SQLite 数据库连接成功
+文件表创建成功或已存在
+AuditLog 表创建成功或已存在
+用户表创建成功或已存在
+Dictionary class loaded: function
+Dictionary methods: [
+  'length',
+  'name',
+  'prototype',
+  'createTable',
+  'create',
+  'findAll',
+  'findById',
+  'update',
+  'delete',
+  'deleteMany',
+  'incrementFrequency',
+  'batchImport',
+  'deleteAll'
+]
+字典表创建成功
+字典表初始化成功
+2025-07-29T08:36:23.494Z - GET /api/user
+2025-07-29T08:36:23.501Z - GET /api/user
+2025-07-29T08:36:23.688Z - GET /api/files
+记录操作: admin - access_data
+2025-07-29T08:36:23.705Z - GET /api/files
+记录操作: admin - access_data
+2025-07-29T08:36:25.141Z - POST /api/lerobot/parse
+收到 /api/lerobot/parse 请求: { folderPath: 'mem_insert_0521_1621', quality: 'medium' }
+未找到 Parquet 文件: mem_insert_0521_1621
+2025-07-29T08:36:44.442Z - GET /api/user
+2025-07-29T08:36:44.447Z - GET /api/user
+2025-07-29T08:36:44.535Z - GET /api/files
+记录操作: admin - access_data
+2025-07-29T08:36:44.555Z - GET /api/files
+记录操作: admin - access_data

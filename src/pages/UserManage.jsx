@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Table, Card, Button, Space, Tag, Switch, Modal, Form, Input, Select, message } from 'antd';
 import { UserAddOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 
 const { Option } = Select;
 
@@ -13,7 +14,7 @@ const UserManage = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/users', {
+      const response = await axios.get(API_ENDPOINTS.USERS, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.data.success) {
@@ -48,7 +49,7 @@ const UserManage = () => {
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
-      const url = editingUser ? `http://localhost:3001/api/users/${editingUser.id}` : 'http://localhost:3001/api/users';
+      const url = editingUser ? `${API_ENDPOINTS.USERS}/${editingUser.id}` : API_ENDPOINTS.USERS;
       const method = editingUser ? 'put' : 'post';
       const response = await axios[method](url, values, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -66,7 +67,7 @@ const UserManage = () => {
 
   const handleDelete = async (id) => {
     try {
-      const response = await axios.delete(`http://localhost:3001/api/users/${id}`, {
+      const response = await axios.delete(`${API_ENDPOINTS.USERS}/${id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       if (response.data.success) {
@@ -100,7 +101,7 @@ const UserManage = () => {
               disabled={record.isAdmin}
               onChange={(checked) => {
                 axios.put(
-                    `http://localhost:3001/api/users/${record.id}`,
+                    `${API_ENDPOINTS.USERS}/${record.id}`,
                     { status: checked ? '启用' : '禁用' },
                     { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
                 ).then(() => {

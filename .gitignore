@@ -1,3 +1,5 @@
 Uploads
 node_modules
 server/node_modules
+dist
+server/cache

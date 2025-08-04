@@ -75,8 +75,9 @@ router.post('/parse', authenticateToken, checkPermission('data'), async (req, re
     }
 
     // 检查是否所有episodes都已缓存
-    const files = await File.findAll({ where: { folderPath } });
-    const parquetFiles = files.filter(file =>
+    const files = await File.findAll();
+    const filteredFiles = files.filter(file => file.folderPath.startsWith(folderPath));
+    const parquetFiles = filteredFiles.filter(file =>
       /^episode_\d{6}\.parquet$/.test(file.originalName) &&
       fs.existsSync(file.path)
     );
@@ -298,9 +299,10 @@ router.get('/episode/:folderPath/:episodeKey', authenticateToken, checkPermissio
     }
 
     // 缓存中没有，需要解析
-    const files = await File.findAll({ where: { folderPath } });
+    const files = await File.findAll();
+    const filteredFiles = files.filter(file => file.folderPath.startsWith(folderPath));
     const episodeIdx = episodeKey.replace('episode_', '');
-    const parquetFile = files.find(file =>
+    const parquetFile = filteredFiles.find(file =>
       file.originalName === `episode_${episodeIdx}.parquet` &&
       fs.existsSync(file.path)
     );

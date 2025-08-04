@@ -10,7 +10,16 @@ router.get('/logs', authenticateToken, checkPermission('settings'), async (req, 
     if (req.user.role !== '管理员') {
       return res.status(403).json({ success: false, message: '仅管理员可查看操作记录' });
     }
-    const logs = await findAllAuditLogs();
+    
+    // 获取查询参数
+    const filters = {
+      username: req.query.username,
+      actions: req.query.actions, // 支持多选操作类型
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    };
+    
+    const logs = await findAllAuditLogs(filters);
     res.json({
       success: true,
       data: logs,

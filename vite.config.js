@@ -8,7 +8,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://10.30.30.94:3001',
+        target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false
       }
@@ -16,7 +16,24 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
-    chunkSizeWarningLimit: 1500
+    sourcemap: false, // 禁用sourcemap减少内存使用
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          antd: ['antd', '@ant-design/icons'],
+          charts: ['chart.js', 'react-chartjs-2', 'echarts', 'plotly.js', 'react-plotly.js'],
+          three: ['three', '@react-three/fiber', '@react-three/drei']
+        }
+      }
+    },
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
+    }
   }
 })

@@ -3,6 +3,7 @@ import { Form, Input, Button, Checkbox, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 
 const Login = () => {
     const navigate = useNavigate();
@@ -11,7 +12,7 @@ const Login = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
-            const response = await axios.post('http://10.30.30.94:3001/api/login', {
+            const response = await axios.post(API_ENDPOINTS.LOGIN, {
                 username: values.username,
                 password: values.password,
                 remember: values.remember,

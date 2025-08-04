@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  datemanager-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: datemanager-dev
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - FRONTEND_URL=http://localhost:3001
+      - API_BASE_URL=http://localhost:3001/api
+      - DB_PATH=/app/server/data/datemanager.db
+      - CACHE_TYPE=memory
+      - MAX_FILE_SIZE=100MB
+      - UPLOAD_TEMP_DIR=/tmp/uploads
+    volumes:
+      # 开发时挂载源代码（可选）
+      - ./server:/app/server
+      - ./src:/app/src
+      # 持久化数据
+      - datemanager_dev_db:/app/server/data
+      - datemanager_dev_uploads:/app/Uploads
+      - datemanager_dev_cache:/app/server/cache
+    restart: unless-stopped
+    command: ["sh", "-c", "cd /app/server && npm run dev"]
+
+volumes:
+  datemanager_dev_db:
+    driver: local
+  datemanager_dev_uploads:
+    driver: local
+  datemanager_dev_cache:
+    driver: local

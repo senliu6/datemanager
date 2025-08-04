@@ -30,7 +30,9 @@ const DataList = () => {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const response = await axios.get('/api/files');
+            const response = await axios.get('/api/files', {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
             // console.log('API /api/files response:', response.data.data);
             const files = (response.data.data || []).map((file) => ({
                 key: file.id,
@@ -81,7 +83,9 @@ const DataList = () => {
         console.log('Fetching with folderPath:', folderPath, 'quality:', quality);
         setLoading(true);
         axios
-            .post('/api/lerobot/parse', {folderPath, quality})
+            .post('/api/lerobot/parse', {folderPath, quality}, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            })
             .then((res) => {
                 console.log('API /api/lerobot/parse Response:', res.data.data?.length, 'episodes');
                 if (!res.data.data || res.data.data.length === 0) {
@@ -182,6 +186,8 @@ const DataList = () => {
             const response = await axios.put(`/api/files/${editingFile.key}`, {
                 originalName: values.originalName,
                 project: values.project || '未分类',
+            }, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
             });
             if (response.data.success) {
                 message.success('文件信息更新成功');
@@ -214,10 +220,14 @@ const DataList = () => {
                     // 判断是否为整数 ID（文件），否则视为文件夹路径
                     if (/^\d+$/.test(id)) {
                         console.log('Deleting with ID:', '删除文件');
-                        response = await axios.delete(`/api/files/${encodeURIComponent(id)}`);
+                        response = await axios.delete(`/api/files/${encodeURIComponent(id)}`, {
+                            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                        });
                     } else {
                         console.log('Deleting with ID:', '删除文件夹');
-                        response = await axios.delete(`/api/folders/${encodeURIComponent(id)}`);
+                        response = await axios.delete(`/api/folders/${encodeURIComponent(id)}`, {
+                            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                        });
                     }
                     if (response.data.success) {
                         message.success('删除成功');
@@ -244,7 +254,9 @@ const DataList = () => {
             onOk: async () => {
                 try {
                     setLoading(true);
-                    const response = await axios.delete('/api/clear-database');
+                    const response = await axios.delete('/api/clear-database', {
+                        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                    });
                     if (response.data.success) {
                         message.success('数据库和文件已清除');
                         fetchData();
@@ -684,7 +696,9 @@ const DataList = () => {
                                             try {
                                                 setLoading(true);
                                                 // 清理所有质量级别的缓存
-                                                await axios.delete(`/api/lerobot/cache/${encodeURIComponent(currentFolderPath)}`);
+                                                await axios.delete(`/api/lerobot/cache/${encodeURIComponent(currentFolderPath)}`, {
+                                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+                                });
                                                 // 清空当前数据
                                                 setEpisodesMeta([]);
                                                 setSelectedEpisode(null);

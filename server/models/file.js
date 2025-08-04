@@ -89,10 +89,28 @@ const File = {
     });
   },
 
-  findAll: () => {
+  findAll: (options = {}) => {
     return new Promise((resolve, reject) => {
-      const sql = 'SELECT * FROM files';
-      db.all(sql, [], (err, rows) => {
+      let sql = 'SELECT * FROM files';
+      let params = [];
+      
+      // 支持where条件查询
+      if (options.where) {
+        const whereConditions = [];
+        const whereParams = [];
+        
+        for (const [key, value] of Object.entries(options.where)) {
+          whereConditions.push(`${key} = ?`);
+          whereParams.push(value);
+        }
+        
+        if (whereConditions.length > 0) {
+          sql += ' WHERE ' + whereConditions.join(' AND ');
+          params = whereParams;
+        }
+      }
+      
+      db.all(sql, params, (err, rows) => {
         if (err) {
           reject(err);
           return;
@@ -123,6 +141,27 @@ const File = {
           tags: JSON.parse(row.tags)
         };
         resolve(file);
+      });
+    });
+  },
+
+  findByOriginalName: (originalName) => {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM files WHERE originalName = ?';
+      db.all(sql, [originalName], (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (!rows || rows.length === 0) {
+          resolve([]);
+          return;
+        }
+        const files = rows.map(row => ({
+          ...row,
+          tags: JSON.parse(row.tags)
+        }));
+        resolve(files);
       });
     });
   },

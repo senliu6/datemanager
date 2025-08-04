@@ -1,22 +1,36 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
-// 配置文件存储
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../Uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
+// 改为内存存储，不保存到本地磁盘
+const storage = multer.memoryStorage();
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 增加到500MB限制
+    fieldSize: 50 * 1024 * 1024,  // 字段大小限制50MB
+    fields: 10,                   // 最多10个字段
+    files: 50                     // 最多50个文件
   },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+  fileFilter: (req, file, cb) => {
+    // 允许的文件类型
+    const allowedTypes = [
+      'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
+      'video/x-ms-wmv', 'video/x-flv', 'video/webm', 'video/x-m4v',
+      'image/jpeg', 'image/png', 'image/gif',
+      'application/pdf', 'text/plain', 'application/json',
+      'application/zip', 'application/x-zip-compressed', // 添加zip文件支持
+      'application/octet-stream'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype) || 
+        file.originalname.endsWith('.parquet') || 
+        file.originalname.endsWith('.jsonl') ||
+        file.originalname.endsWith('.zip')) { // 添加zip文件扩展名支持
+      cb(null, true);
+    } else {
+      cb(new Error(`不支持的文件类型: ${file.mimetype}`), false);
+    }
   }
 });
-
-const upload = multer({ storage });
 
 module.exports = upload;

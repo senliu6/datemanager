@@ -53,9 +53,41 @@ const logAction = ({ userId, username, action, details, ipAddress }) => {
     });
 };
 
-const findAllAuditLogs = () => {
+const findAllAuditLogs = (filters = {}) => {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM audit_logs ORDER BY timestamp DESC`, [], (err, rows) => {
+        let query = `SELECT * FROM audit_logs WHERE 1=1`;
+        const params = [];
+
+        // 用户名筛选
+        if (filters.username) {
+            query += ` AND username LIKE ?`;
+            params.push(`%${filters.username}%`);
+        }
+
+        // 多选操作类型筛选
+        if (filters.actions) {
+            const actions = Array.isArray(filters.actions) ? filters.actions : [filters.actions];
+            if (actions.length > 0) {
+                const placeholders = actions.map(() => '?').join(',');
+                query += ` AND action IN (${placeholders})`;
+                params.push(...actions);
+            }
+        }
+
+        // 时间范围筛选
+        if (filters.startDate) {
+            query += ` AND timestamp >= ?`;
+            params.push(filters.startDate);
+        }
+
+        if (filters.endDate) {
+            query += ` AND timestamp <= ?`;
+            params.push(filters.endDate);
+        }
+
+        query += ` ORDER BY timestamp DESC`;
+
+        db.all(query, params, (err, rows) => {
             if (err) {
                 console.error('查询操作日志失败:', err);
                 reject(err);

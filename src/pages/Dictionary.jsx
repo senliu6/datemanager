@@ -11,7 +11,8 @@ import {
   Space,
   Upload,
   Divider,
-  Tooltip
+  Tooltip,
+  Skeleton
 } from 'antd';
 import {
   PlusOutlined,
@@ -25,6 +26,30 @@ import {
 import axios from '../util/axios';
 
 const { Search } = Input;
+
+// 字典表格骨架屏组件
+const DictionaryTableSkeleton = () => (
+  <div style={{ padding: '16px 0' }}>
+    {[...Array(8)].map((_, index) => (
+      <div key={index} style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '12px 0',
+        borderBottom: '1px solid #f0f0f0'
+      }}>
+        <div style={{ width: '32px', marginRight: '8px' }}>
+          <Skeleton.Button active size="small" style={{ width: '16px', height: '16px' }} />
+        </div>
+        <div style={{ flex: 1, display: 'flex', gap: '16px' }}>
+          <Skeleton.Input active size="small" style={{ width: '200px' }} />
+          <Skeleton.Input active size="small" style={{ width: '300px' }} />
+          <Skeleton.Input active size="small" style={{ width: '120px' }} />
+          <Skeleton.Input active size="small" style={{ width: '100px' }} />
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 const Dictionary = () => {
   const [data, setData] = useState([]);
@@ -631,16 +656,20 @@ const Dictionary = () => {
           </Space>
         </div>
 
-        <Table
-          rowSelection={rowSelection}
-          columns={columns}
-          dataSource={data}
-          rowKey="id"
-          loading={loading}
-          pagination={pagination}
-          onChange={handleTableChange}
-          size="middle"
-        />
+        {loading && data.length === 0 ? (
+          <DictionaryTableSkeleton />
+        ) : (
+          <Table
+            rowSelection={rowSelection}
+            columns={columns}
+            dataSource={data}
+            rowKey="id"
+            loading={loading && data.length > 0}
+            pagination={pagination}
+            onChange={handleTableChange}
+            size="middle"
+          />
+        )}
       </Card>
 
       {/* 添加/编辑模态框 */}

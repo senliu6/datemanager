@@ -6,6 +6,8 @@ const File = require('../models/file');
 const { authenticateToken, checkPermission } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { logAction } = require('../models/auditLog');
+const { getVideoDuration } = require('../utils/videoUtils');
+
 
 const router = express.Router();
 
@@ -20,17 +22,44 @@ router.post('/upload', authenticateToken, checkPermission('upload'), upload.arra
 
     for (const file of files) {
       const folderPath = req.body.folderPath || (file.webkitRelativePath ? path.dirname(file.webkitRelativePath) : '未分类');
+      
+      console.log(`开始上传文件: ${file.originalname}, 大小: ${file.size} bytes`);
+      
+      // 保存文件到本地
+      const uploadsDir = process.env.NODE_ENV === 'production' 
+        ? '/app/Uploads' 
+        : path.join(__dirname, '../../Uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000000000)}${path.extname(file.originalname)}`;
+      const filePath = path.join(uploadsDir, fileName);
+      fs.writeFileSync(filePath, file.buffer);
+
+      console.log(`文件保存成功: ${filePath}`);
+
+      // 获取视频时长（异步处理，不阻塞响应）
+      let duration = '未知';
+      try {
+        duration = await getVideoDuration(filePath);
+      } catch (durationError) {
+        console.warn('获取视频时长失败:', durationError);
+      }
+      
       const fileData = await File.create({
-        fileName: path.basename(file.path),
+        fileName: fileName,
         originalName: file.originalname,
         size: file.size,
-        path: file.path,
-        uploader: 'admin',
+        duration: duration,
+        path: filePath,
+        uploader: req.user.username || 'admin',
         tags: [],
         chunked: false,
         folderPath: folderPath
       });
       fileList.push(fileData);
+      
       // 记录上传操作
       await logAction({
         userId: req.user.id,
@@ -273,9 +302,21 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
         message: '文件不存在'
       });
     }
-    if (fs.existsSync(file.path)) {
-      fs.unlinkSync(file.path);
+
+    console.log(`准备删除文件: ${file.originalName}, 路径: ${file.path}`);
+
+    // 删除本地文件
+    try {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+        console.log(`本地文件删除成功: ${file.path}`);
+      }
+    } catch (error) {
+      console.warn(`删除本地文件失败: ${error.message}`);
+      // 即使本地文件删除失败，也继续删除数据库记录
     }
+
+    // 从数据库删除记录
     const deleted = await File.delete(req.params.id);
     if (!deleted) {
       return res.status(404).json({
@@ -292,6 +333,8 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
       details: `删除文件: ${file.originalName}`,
       ipAddress: req.ip,
     });
+
+    console.log(`文件删除成功: ${file.originalName}`);
     res.json({
       success: true,
       message: '文件删除成功'
@@ -322,71 +365,43 @@ router.get('/download/:id', authenticateToken, checkPermission('data'), async (r
       return res.status(404).json({ success: false, message: '文件不存在' });
     }
 
-    const filePath = file.path;
+    console.log(`📁 准备下载本地文件: ${file.path}`);
 
-    if (!fs.existsSync(filePath)) {
-      console.error(`文件路径不存在: ${filePath}`);
-      return res.status(404).json({ success: false, message: '文件在服务器上不存在' });
-    }
-
-    const stats = fs.statSync(filePath);
-    console.log(`📊 文件系统状态:`, {
-      size: stats.size,
-      isFile: stats.isFile(),
-      permissions: stats.mode.toString(8),
-      lastModified: stats.mtime.toISOString(),
-    });
-
-    if (stats.size === 0) {
-      console.error(`文件为空: ${filePath}`);
-      return res.status(400).json({ success: false, message: '文件为空' });
-    }
-
-    if (stats.size !== file.size) {
-      console.warn(`⚠️ 文件大小不匹配: 数据库=${file.size}, 实际=${stats.size}`);
+    // 检查本地文件是否存在
+    if (!fs.existsSync(file.path)) {
+      console.error(`本地文件不存在: ${file.path}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: '文件不存在'
+      });
     }
 
     const safeName = path.basename(file.originalName);
+    const fileStats = fs.statSync(file.path);
+    
+    // 设置响应头
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${encodeURIComponent(safeName)}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
     );
-    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Length', fileStats.size);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
     console.log(`📤 发送文件:`, {
       filename: safeName,
-      contentLength: stats.size,
-      headers: res.getHeaders(),
+      contentLength: fileStats.size,
+      filePath: file.path,
     });
 
-    const stream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
-    let totalBytesSent = 0;
-
-    stream.on('data', (chunk) => {
-      totalBytesSent += chunk.length;
+    // 发送文件数据
+    const fileStream = fs.createReadStream(file.path);
+    fileStream.pipe(res);
+    
+    fileStream.on('end', () => {
+      console.log(`✅ 文件 ${safeName} 下载完成, 总计传输: ${fileStats.size} bytes`);
     });
-
-    stream.on('error', (err) => {
-      console.error(`文件流错误 (${safeName}):`, {
-        error: err.message,
-        code: err.code,
-        stack: err.stack,
-        bytesSent: totalBytesSent,
-      });
-      if (!res.headersSent) {
-        res.status(500).json({ success: false, message: '文件传输失败', error: err.message });
-      } else {
-        res.destroy();
-      }
-    });
-
-    stream.pipe(res);
-
-    stream.on('end', () => {
-      console.log(`✅ 文件 ${safeName} 下载完成, 总计传输: ${totalBytesSent} bytes`);
-    });
+    
   } catch (error) {
     console.error('下载文件错误:', {
       id: req.params.id,
@@ -396,8 +411,6 @@ router.get('/download/:id', authenticateToken, checkPermission('data'), async (r
     });
     if (!res.headersSent) {
       res.status(500).json({ success: false, message: '下载失败', error: error.message });
-    } else {
-      res.destroy();
     }
   }
 });

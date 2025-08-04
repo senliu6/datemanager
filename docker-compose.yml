@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  datemanager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: datemanager-app
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - FRONTEND_URL=http://localhost:3001
+      - API_BASE_URL=http://localhost:3001/api
+      - DB_PATH=/app/server/data/datemanager.db
+      - CACHE_TYPE=memory
+      - MAX_FILE_SIZE=2GB
+      - UPLOAD_TEMP_DIR=/tmp/uploads
+      - NODE_OPTIONS=--max-old-space-size=4096 --expose-gc
+    volumes:
+      # 持久化数据库
+      - datemanager_db:/app/server/data
+      # 持久化上传文件
+      - datemanager_uploads:/app/Uploads
+      # 持久化缓存
+      - datemanager_cache:/app/server/cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  datemanager_db:
+    driver: local
+  datemanager_uploads:
+    driver: local
+  datemanager_cache:
+    driver: local
