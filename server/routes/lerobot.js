@@ -347,4 +347,115 @@ router.get('/episode/:folderPath/:episodeKey', authenticateToken, checkPermissio
   }
 });
 
+// 单独获取点云数据的API接口
+router.get('/pointcloud/:folderPath/:episodeKey', authenticateToken, checkPermission('data'), async (req, res) => {
+  try {
+    const { folderPath, episodeKey } = req.params;
+    const { quality = 'medium' } = req.query;
+    console.log('收到获取点云数据请求:', { folderPath, episodeKey, quality });
+
+    // 先尝试从缓存获取完整episode数据
+    const cachedEpisode = await getEpisodeCache(folderPath, episodeKey, quality);
+    if (cachedEpisode && cachedEpisode.pointcloud_data) {
+      console.log(`从缓存读取点云数据 (${quality}):`, episodeKey, {
+        cam_top_length: cachedEpisode.pointcloud_data?.cam_top?.length || 0,
+        cam_right_wrist_length: cachedEpisode.pointcloud_data?.cam_right_wrist?.length || 0
+      });
+      return res.json({
+        success: true,
+        data: {
+          episodeKey,
+          quality,
+          pointcloud_data: cachedEpisode.pointcloud_data,
+          source: 'cache'
+        }
+      });
+    }
+
+    // 缓存中没有，需要解析
+    const files = await File.findAll();
+    const filteredFiles = files.filter(file => file.folderPath.startsWith(folderPath));
+    const episodeIdx = episodeKey.replace('episode_', '');
+    const parquetFile = filteredFiles.find(file =>
+      file.originalName === `episode_${episodeIdx}.parquet` &&
+      fs.existsSync(file.path)
+    );
+
+    if (!parquetFile) {
+      return res.status(404).json({ success: false, message: `未找到episode文件: ${episodeKey}` });
+    }
+
+    console.log('开始解析点云数据:', episodeKey, 'quality:', quality);
+
+    // 使用Python脚本解析点云数据
+    const pythonScript = path.join(__dirname, '../parse_lerobot.py');
+    const args = [
+      '--files', `${parquetFile.path}:${parquetFile.originalName}`,
+      '--folderPath', folderPath,
+      '--quality', quality
+    ];
+
+    const pythonProcess = spawn('python3', [pythonScript, ...args]);
+    let stdoutData = '';
+    let stderrData = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
+
+    pythonProcess.on('close', async (code) => {
+      if (code !== 0) {
+        console.error('Python脚本执行失败:', stderrData);
+        return res.status(500).json({ success: false, message: '解析点云数据失败', error: stderrData });
+      }
+
+      try {
+        const episodes = JSON.parse(stdoutData || '[]');
+        const episode = episodes[0];
+
+        if (!episode || !episode.pointcloud_data) {
+          return res.status(500).json({ success: false, message: '未找到点云数据' });
+        }
+
+        // 添加视频路径等基础信息
+        const videoFiles = files.filter(file => file.path.endsWith('.mp4'));
+        const baseFolder = parquetFile.folderPath.split('/')[0];
+        episode.video_paths = getVideoPathsForEpisode(episodeIdx, baseFolder, videoFiles);
+
+        // 缓存完整的episode数据
+        await setEpisodeCache(folderPath, episode, quality);
+
+        console.log('点云数据解析完成:', {
+          key: episode.key,
+          quality,
+          pointcloud_data: {
+            cam_top_length: episode.pointcloud_data?.cam_top?.length || 0,
+            cam_right_wrist_length: episode.pointcloud_data?.cam_right_wrist?.length || 0
+          }
+        });
+
+        res.json({
+          success: true,
+          data: {
+            episodeKey,
+            quality,
+            pointcloud_data: episode.pointcloud_data,
+            source: 'parsed'
+          }
+        });
+      } catch (parseError) {
+        console.error('JSON解析错误:', parseError);
+        res.status(500).json({ success: false, message: 'JSON解析失败', error: parseError.message });
+      }
+    });
+  } catch (error) {
+    console.error('获取点云数据错误:', error);
+    res.status(500).json({ success: false, message: '获取点云数据失败', error: error.message });
+  }
+});
+
 module.exports = router;

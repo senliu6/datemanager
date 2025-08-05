@@ -6,7 +6,7 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 增加到500MB限制
+    fileSize: 1000 * 1024 * 1024, // 增加到1000MB限制
     fieldSize: 50 * 1024 * 1024,  // 字段大小限制50MB
     fields: 10,                   // 最多10个字段
     files: 50                     // 最多50个文件
@@ -19,7 +19,9 @@ const upload = multer({
       'image/jpeg', 'image/png', 'image/gif',
       'application/pdf', 'text/plain', 'application/json',
       'application/zip', 'application/x-zip-compressed', // 添加zip文件支持
-      'application/octet-stream'
+      'application/octet-stream','application/x-hdf',
+      'application/x-hdf5',
+
     ];
     
     if (allowedTypes.includes(file.mimetype) || 

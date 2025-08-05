@@ -25,7 +25,7 @@ const DataList = () => {
     const [selectedEpisode, setSelectedEpisode] = useState(null);
 
     const [currentFolderPath, setCurrentFolderPath] = useState(null);
-    const [dataQuality, setDataQuality] = useState('medium');
+
 
     const fetchData = async () => {
         try {
@@ -79,59 +79,57 @@ const DataList = () => {
         }
     }, [viewMode, data, currentFolderPath]);
 
-    const fetchEpisodeDataWithQuality = (folderPath, quality) => {
-        console.log('Fetching with folderPath:', folderPath, 'quality:', quality);
+
+
+
+
+    const fetchEpisodeDataWithQuality = async (folderPath, quality) => {
+        console.log('fetchEpisodeDataWithQuality called with quality:', quality);
+        
         setLoading(true);
-        axios
-            .post('/api/lerobot/parse', {folderPath, quality}, {
+        try {
+            const response = await axios.post('/api/lerobot/parse', {folderPath, quality}, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            })
-            .then((res) => {
-                console.log('API /api/lerobot/parse Response:', res.data.data?.length, 'episodes');
-                if (!res.data.data || res.data.data.length === 0) {
-                    message.warning('未找到有效的 episode 数据');
-                    setEpisodesMeta([]);
-                    setSelectedEpisode(null);
-                } else {
-                    const uniqueEpisodes = res.data.data.reduce((acc, ep) => {
-                        if (!acc.find(item => item.key === ep.key)) {
-                            console.log(`Episode: ${ep.key}, Frame count: ${ep.frame_count}, Quality: ${quality}`);
-                            console.log('Pointcloud lengths:', {
-                                cam_top: ep.pointcloud_data?.cam_top?.length || 0,
-                                cam_right_wrist: ep.pointcloud_data?.cam_right_wrist?.length || 0
-                            });
-                            acc.push(ep);
-                        }
-                        return acc;
-                    }, []);
-                    
-                    // 按episode索引排序
-                    uniqueEpisodes.sort((a, b) => {
-                        const aIndex = parseInt(a.key.replace('episode_', ''));
-                        const bIndex = parseInt(b.key.replace('episode_', ''));
-                        return aIndex - bIndex;
-                    });
-                    
-                    setEpisodesMeta(uniqueEpisodes);
-                    // 保持当前选中的episode，如果不存在则选择第一个
-                    const currentKey = selectedEpisode?.key;
-                    const newSelected = uniqueEpisodes.find(ep => ep.key === currentKey) || uniqueEpisodes[0] || null;
-                    setSelectedEpisode(newSelected);
-                }
-            })
-            .catch((err) => {
-                console.error('加载 LeRobot 数据失败:', err);
+            });
+            
+            console.log('API /api/lerobot/parse Response:', response.data.data?.length, 'episodes');
+            if (!response.data.data || response.data.data.length === 0) {
+                message.warning('未找到有效的 episode 数据');
                 setEpisodesMeta([]);
                 setSelectedEpisode(null);
-                message.error('加载数据集失败: ' + err.message);
-            })
-            .finally(() => {
-                setLoading(false);
-            });
+            } else {
+                const uniqueEpisodes = response.data.data.reduce((acc, ep) => {
+                    if (!acc.find(item => item.key === ep.key)) {
+                        console.log(`Episode: ${ep.key}, Frame count: ${ep.frame_count}`);
+                        acc.push(ep);
+                    }
+                    return acc;
+                }, []);
+                
+                // 按episode索引排序
+                uniqueEpisodes.sort((a, b) => {
+                    const aIndex = parseInt(a.key.replace('episode_', ''));
+                    const bIndex = parseInt(b.key.replace('episode_', ''));
+                    return aIndex - bIndex;
+                });
+                
+                setEpisodesMeta(uniqueEpisodes);
+                // 选择第一个episode
+                const firstEpisode = uniqueEpisodes[0] || null;
+                setSelectedEpisode(firstEpisode);
+            }
+        } catch (err) {
+            console.error('加载 LeRobot 数据失败:', err);
+            setEpisodesMeta([]);
+            setSelectedEpisode(null);
+            message.error('加载数据集失败: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const fetchEpisodeData = (folderPath) => {
-        fetchEpisodeDataWithQuality(folderPath, dataQuality);
+        fetchEpisodeDataWithQuality(folderPath, 'medium');
     };
 
 
@@ -155,9 +153,30 @@ const DataList = () => {
         const flattenTree = (node, parentKey = '') => {
             return Object.entries(node).map(([folder, {children, files}]) => {
                 const fullKey = parentKey ? `${parentKey}/${folder}` : folder;
+                
+                // 获取文件夹的上传者和上传时间信息
+                // 如果文件夹有文件，使用第一个文件的信息；如果没有文件，从子文件夹中获取
+                let folderUploader = '未知用户';
+                let folderUploadTime = '未知时间';
+                
+                if (files.length > 0) {
+                    // 使用文件夹中第一个文件的上传者和时间
+                    folderUploader = files[0].uploader || '未知用户';
+                    folderUploadTime = files[0].uploadTime || '未知时间';
+                } else if (Object.keys(children).length > 0) {
+                    // 如果没有直接文件，尝试从子文件夹获取信息
+                    const childFolders = flattenTree(children, fullKey);
+                    if (childFolders.length > 0 && childFolders[0].uploader) {
+                        folderUploader = childFolders[0].uploader;
+                        folderUploadTime = childFolders[0].uploadTime;
+                    }
+                }
+                
                 const result = {
                     key: fullKey,
                     folder: folder,
+                    uploader: folderUploader,
+                    uploadTime: folderUploadTime,
                     children: files.length === 0 ? flattenTree(children, fullKey) : files.map((file) => ({
                         ...file,
                         key: `${fullKey}/${file.key}`
@@ -306,6 +325,7 @@ const DataList = () => {
                         method: 'GET',
                         headers: {
                             Accept: 'application/octet-stream',
+                            Authorization: `Bearer ${localStorage.getItem('token')}`,
                         },
                     });
 
@@ -412,16 +432,25 @@ const DataList = () => {
     };
 
     const handleEpisodeSelect = async (episode) => {
-        console.log('选择episode:', episode.key, '当前质量:', dataQuality);
+        console.log('选择episode:', episode.key);
         
-        // 如果episode数据是当前质量级别的，直接使用
+        // 查找episode数据
         const currentEpisodeInList = episodesMeta.find(ep => ep.key === episode.key);
         if (currentEpisodeInList) {
+            console.log('✅ 找到episode，设置selectedEpisode:', currentEpisodeInList);
+            console.log('📊 Episode详细数据:', {
+                key: currentEpisodeInList.key,
+                frame_count: currentEpisodeInList.frame_count,
+                index: currentEpisodeInList.index,
+                hasVideoData: !!currentEpisodeInList.video_paths,
+                hasMotorData: !!currentEpisodeInList.motor_data,
+                hasPointcloudData: !!currentEpisodeInList.pointcloud_data
+            });
             setSelectedEpisode(currentEpisodeInList);
             console.log('使用列表中的episode数据:', currentEpisodeInList.key, '帧数:', currentEpisodeInList.frame_count);
         } else {
             // 如果找不到，重新获取数据
-            console.log('未找到对应episode，重新获取数据');
+            console.log('❌ 未找到对应episode，重新获取数据');
             setSelectedEpisode(episode);
         }
     };
@@ -519,39 +548,34 @@ const DataList = () => {
             title: '上传者',
             dataIndex: 'uploader',
             key: 'uploader',
-            render: (text, record) => (record.children && record.children.length > 0 ? '-' : text),
+            render: (text, record) => {
+                // 如果是文件夹（有children），显示上传者信息
+                if (record.children && record.children.length > 0) {
+                    return text || '未知用户';
+                }
+                // 如果是文件，不显示上传者信息（由父文件夹显示）
+                return '-';
+            },
         },
         {
             title: '上传时间',
             dataIndex: 'uploadTime',
             key: 'uploadTime',
-            render: (text, record) => (record.children && record.children.length > 0 ? '-' : text),
-            sorter: (a, b) =>
-                (a.children && a.children.length > 0 ? 0 : new Date(a.uploadTime)) -
-                (b.children && b.children.length > 0 ? 0 : new Date(b.uploadTime)),
-        },
-        {
-            title: '任务',
-            dataIndex: 'task',
-            key: 'task',
-            render: (text, record) =>
-                record.children && record.children.length > 0 ? '-' : (
-                    <Tag color={text === '已完成' ? 'green' : 'processing'}>
-                        {text === '已完成' ? <CheckCircleOutlined/> : <SyncOutlined spin/>}
-                        {text}
-                    </Tag>
-                ),
-        },
-        {
-            title: '标注',
-            dataIndex: 'annotation',
-            key: 'annotation',
-            render: (count, record) =>
-                record.children && record.children.length > 0 ? '-' : (
-                    <Tooltip title={`${count} 条标注`}>
-                        <Tag color="blue">{count}</Tag>
-                    </Tooltip>
-                ),
+            render: (text, record) => {
+                // 如果是文件夹（有children），显示上传时间
+                if (record.children && record.children.length > 0) {
+                    return text || '未知时间';
+                }
+                // 如果是文件，不显示上传时间（由父文件夹显示）
+                return '-';
+            },
+            sorter: (a, b) => {
+                // 只对文件夹进行排序
+                if (a.children && a.children.length > 0 && b.children && b.children.length > 0) {
+                    return new Date(a.uploadTime || 0) - new Date(b.uploadTime || 0);
+                }
+                return 0;
+            },
         },
         {
             title: '操作',
@@ -593,64 +617,83 @@ const DataList = () => {
             console.warn('Invalid folderPath, using first valid key');
             folderPath = flattenGroup(data)[0]?.key;
         }
+        
+        console.log('🎬 用户点击数据展示，切换到单一视图模式');
+        
+        // 立即清空当前选中的episode，触发骨架图显示
+        setSelectedEpisode(null);
+        
+        // 切换视图模式
         setViewMode('single');
         setCurrentFolderPath(folderPath);
+        
+        // 开始获取episode数据
         fetchEpisodeData(folderPath);
     };
 
-    const renderSingleView = () => (
-        <div className="single-view-container">
-            <Row gutter={16}>
-                <Col span={3} className="episode-list">
-                    <div style={{ marginBottom: 16 }}>
-                        <h3>Episode 列表</h3>
-                        <div style={{ fontSize: '12px', color: '#666', marginBottom: 8 }}>
-                            Folder: {currentFolderPath}
+    const renderSingleView = () => {
+        console.log('🎨 Rendering single view:', {
+            viewMode,
+            currentFolderPath,
+            selectedEpisode: selectedEpisode?.key || 'null',
+            episodesCount: episodesMeta.length
+        });
+        
+        return (
+            <div className="single-view-container" style={{ 
+                minHeight: '600px', 
+                padding: '16px',
+                backgroundColor: '#f5f5f5',
+                border: '1px solid #d9d9d9',
+                borderRadius: '6px'
+            }}>
+                <Row gutter={16}>
+                    <Col span={3} className="episode-list" style={{
+                        backgroundColor: '#fff',
+                        padding: '16px',
+                        borderRadius: '6px',
+                        minHeight: '500px'
+                    }}>
+                        <div style={{ marginBottom: 16 }}>
+                            <h3>Episode 列表</h3>
+                            <div style={{ fontSize: '12px', color: '#666', marginBottom: 8 }}>
+                                Folder: {currentFolderPath}
+                            </div>
                         </div>
-                        <Select
-                            value={dataQuality}
-                            onChange={(value) => {
-                                console.log('切换质量级别:', value);
-                                setDataQuality(value);
-                                if (currentFolderPath) {
-                                    // 使用新的质量值直接调用，避免状态更新延迟
-                                    fetchEpisodeDataWithQuality(currentFolderPath, value);
-                                }
-                            }}
-                            style={{ width: '100%', marginBottom: 8 }}
-                            size="small"
-                        >
-                            <Select.Option value="low">低质量 (快速)</Select.Option>
-                            <Select.Option value="medium">中等质量 (平衡)</Select.Option>
-                            <Select.Option value="high">高质量 (详细)</Select.Option>
-                            <Select.Option value="full">完整数据 (最慢)</Select.Option>
-                        </Select>
-                    </div>
-                    <div className="episode-items">
-                        {episodesMeta.map((ep, idx) => {
-                            console.log(`Episode ${idx} - Folder: ${ep.folderPath}, Key: ${ep.key}`); // 调试
-                            return (
-                                <div
-                                    key={`${currentFolderPath}_${ep.key}_${idx}`} // 确保唯一性
-                                    className={`episode-item ${selectedEpisode?.key === ep.key ? 'selected' : ''}`}
-                                    onClick={() => handleEpisodeSelect(ep)}
-                                >
-                                    Episode {idx} (Key: {ep.key})
-                                </div>
-                            );
-                        })}
-                    </div>
-                </Col>
-                <Col span={18}>
-                    {selectedEpisode ? (
+                        <div className="episode-items">
+                            {episodesMeta.map((ep, idx) => {
+                                return (
+                                    <div
+                                        key={`${currentFolderPath}_${ep.key}_${idx}`} // 确保唯一性
+                                        className={`episode-item ${selectedEpisode?.key === ep.key ? 'selected' : ''}`}
+                                        onClick={() => handleEpisodeSelect(ep)}
+                                        style={{
+                                            padding: '8px',
+                                            margin: '4px 0',
+                                            backgroundColor: selectedEpisode?.key === ep.key ? '#e6f7ff' : '#fafafa',
+                                            border: '1px solid #d9d9d9',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Episode {idx} (Key: {ep.key})
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Col>
+                    <Col span={18} style={{
+                        backgroundColor: '#fff',
+                        padding: '16px',
+                        borderRadius: '6px',
+                        minHeight: '500px'
+                    }}>
                         <LeRobotEpisodeCard episode={selectedEpisode} onSelectEpisode={handleEpisodeSelect}/>
-                    ) : (
-                        <div className="no-data">请选择一个 Episode</div>
-                    )}
-                </Col>
-            </Row>
-        </div>
-    );
+                    </Col>
+                </Row>
+            </div>
+        );
+    };
 
 
     const renderListView = () => (

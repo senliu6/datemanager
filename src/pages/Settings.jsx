@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Button, Table, message, Modal, Space, Form, Input, Select, DatePicker, Row, Col } from 'antd';
-import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Card, Button, Table, message, Modal, Space, Form, Input, Select, DatePicker, Row, Col, Descriptions, Tag, Divider } from 'antd';
+import { SearchOutlined, ReloadOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import axios from '../util/axios';
 import moment from 'moment';
 
@@ -127,8 +127,111 @@ const Settings = () => {
     { label: '删除文件', value: 'delete_file' },
   ];
 
+  // 版本信息
+  const versionInfo = {
+    name: 'LeRobot数据管理系统',
+    version: '1.0.0',
+    buildDate: '2024-01-15',
+    description: '机器人数据集管理和可视化平台',
+    author: '开发团队',
+    dependencies: {
+      react: '^18.2.0',
+      antd: '^5.26.1',
+      'react-three-fiber': '^8.18.0',
+      'plotly.js': '^3.0.1'
+    }
+  };
+
+  // 获取系统运行时信息
+  const getRuntimeInfo = () => {
+    const now = new Date();
+    const uptime = now.getTime() - (performance.timeOrigin || 0);
+    const uptimeHours = Math.floor(uptime / (1000 * 60 * 60));
+    const uptimeMinutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return {
+      currentTime: now.toLocaleString('zh-CN'),
+      uptime: `${uptimeHours}小时${uptimeMinutes}分钟`,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language
+    };
+  };
+
+  const runtimeInfo = getRuntimeInfo();
+
   return (
     <div>
+      {/* 版本信息 */}
+      <Card 
+        title={
+          <Space>
+            <InfoCircleOutlined />
+            版本信息
+          </Space>
+        } 
+        style={{ marginBottom: 16 }}
+      >
+        <Row gutter={[16, 16]}>
+          <Col span={12}>
+            <Descriptions title="系统信息" bordered size="small" column={1}>
+              <Descriptions.Item label="系统名称">
+                <Tag color="blue">{versionInfo.name}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="版本号">
+                <Tag color="green">v{versionInfo.version}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="构建日期">
+                {versionInfo.buildDate}
+              </Descriptions.Item>
+              <Descriptions.Item label="系统描述">
+                {versionInfo.description}
+              </Descriptions.Item>
+              <Descriptions.Item label="开发团队">
+                {versionInfo.author}
+              </Descriptions.Item>
+            </Descriptions>
+          </Col>
+          <Col span={12}>
+            <Descriptions title="运行环境" bordered size="small" column={1}>
+              <Descriptions.Item label="当前时间">
+                {runtimeInfo.currentTime}
+              </Descriptions.Item>
+              <Descriptions.Item label="运行时长">
+                {runtimeInfo.uptime}
+              </Descriptions.Item>
+              <Descriptions.Item label="操作系统">
+                {runtimeInfo.platform}
+              </Descriptions.Item>
+              <Descriptions.Item label="浏览器语言">
+                {runtimeInfo.language}
+              </Descriptions.Item>
+              <Descriptions.Item label="浏览器信息">
+                <div style={{ wordBreak: 'break-all', fontSize: '12px' }}>
+                  {runtimeInfo.userAgent.substring(0, 80)}...
+                </div>
+              </Descriptions.Item>
+            </Descriptions>
+          </Col>
+        </Row>
+        
+        <Divider />
+        
+        <Row gutter={[16, 16]}>
+          <Col span={24}>
+            <Descriptions title="核心依赖" bordered size="small" column={4}>
+              {Object.entries(versionInfo.dependencies).map(([name, version]) => (
+                <Descriptions.Item key={name} label={name}>
+                  <Tag color="cyan">{version}</Tag>
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </Col>
+        </Row>
+
+
+      </Card>
+
       {/* 筛选表单 */}
       <Card title="筛选条件" style={{ marginBottom: 16 }}>
         <Form

@@ -74,7 +74,7 @@ def format_pointcloud_data(pointcloud_data: np.ndarray, max_points: int = 500) -
         logging.error(f"Error formatting pointcloud data: {e}")
         return []
 
-def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str, max_frames: int = None, max_points: int = None) -> List[Dict[str, Any]]:
+def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str, max_frames: int = None, max_points: int = None, quality: str = 'medium') -> List[Dict[str, Any]]:
     episodes = []
     base_folder = folder_path.replace('\\', '/')
     logging.info(f"Starting parsing {len(files)} files, folderPath: {base_folder}")
@@ -195,6 +195,11 @@ def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str, max_frame
                         points_per_frame = 1000  # 大数据集保持原有采样
                 else:
                     points_per_frame = max_points
+                
+                # 特殊处理：如果是完整模式且没有指定max_points，强制使用2000个点
+                if max_points is None and quality == 'full':
+                    points_per_frame = 2000
+                    logging.info(f"Full quality mode: forcing 2000 points per frame")
 
                 logging.info(f"Using {points_per_frame} points per frame for pointcloud data")
 
@@ -223,6 +228,7 @@ def parse_lerobot_data(files: List[Tuple[str, str]], folder_path: str, max_frame
                 'index': int(episode_index),
                 'folderPath': base_folder,
                 'frame_count': len(df),
+                'original_frame_count': original_frame_count,  # 添加原始帧数
                 'video_paths': video_paths,
                 'motor_data': {
                     'time': normalized_timestamps,
@@ -287,7 +293,7 @@ def main():
     logging.info(f"Using quality preset: {args.quality}, max_frames: {max_frames}, max_points: {max_points}")
 
     files = [tuple(f.split(':')) for f in args.files]
-    episodes = parse_lerobot_data(files, args.folderPath, max_frames, max_points)
+    episodes = parse_lerobot_data(files, args.folderPath, max_frames, max_points, args.quality)
 
     # ✅ 优化数据输出，减少传输量
     try:
