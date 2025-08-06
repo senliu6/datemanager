@@ -76,7 +76,12 @@ router.post('/parse', authenticateToken, checkPermission('data'), async (req, re
 
     // 检查是否所有episodes都已缓存
     const files = await File.findAll();
-    const filteredFiles = files.filter(file => file.folderPath.startsWith(folderPath));
+    const filteredFiles = files.filter(file => {
+      // 排除以 images 开头的文件夹中的文件
+      const pathParts = file.folderPath.split('/');
+      const hasImagesFolder = pathParts.some(part => part.toLowerCase().startsWith('images'));
+      return file.folderPath.startsWith(folderPath) && !hasImagesFolder;
+    });
     const parquetFiles = filteredFiles.filter(file =>
       /^episode_\d{6}\.parquet$/.test(file.originalName) &&
       fs.existsSync(file.path)
