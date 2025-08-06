@@ -292,14 +292,13 @@ const DataList = () => {
         });
     };
 
-// DataList.jsx
+// DataList.jsx - 批量下载函数，带进度显示
     const handleDownload = async () => {
         if (selectedRowKeys.length === 0) {
             message.warning('请先勾选要下载的文件');
             return;
         }
 
-        const zip = new JSZip();
         const allItems = flattenGroup(data);
         const selectedFiles = selectedRowKeys
             .map((key) => allItems.find((item) => item.key === key))
@@ -310,108 +309,218 @@ const DataList = () => {
             return;
         }
 
-        const maxRetries = 3;
-        const retryDelay = 1000;
-        const baseUrl = 'http://localhost:3001';
+        const baseUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+        
+        // 计算总文件大小
+        const totalSizeMB = selectedFiles.reduce((sum, file) => {
+            const sizeMB = parseFloat(file.size.replace(' MB', ''));
+            return sum + (isNaN(sizeMB) ? 0 : sizeMB);
+        }, 0);
 
-        const downloadFileWithRetry = async (file, retries = maxRetries) => {
-            const fileId = file.key.split('/').pop();
-            const requestUrl = `${baseUrl}/api/download/${fileId}`;
-            console.log(`📥 Attempting to download fileId: ${fileId}, folderPath: ${file.folderPath}, originalName: ${file.originalName}`);
+        // 创建进度提示
+        let hideProgress = message.loading(`正在准备批量下载 ${selectedFiles.length} 个文件 (约${totalSizeMB.toFixed(1)}MB)...`, 0);
+        
+        try {
+            setLoading(true);
+            
+            // 提取文件ID
+            const fileIds = selectedFiles.map(file => file.key.split('/').pop());
+            
+            console.log(`📦 开始批量下载 ${fileIds.length} 个文件`);
+            
+            // 调用服务端批量下载API
+            const response = await fetch(`${baseUrl}/api/download/batch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+                body: JSON.stringify({ fileIds }),
+            });
 
-            for (let attempt = 1; attempt <= retries; attempt++) {
+            if (!response.ok) {
+                let errorMessage = `服务器返回状态码: ${response.status}`;
                 try {
-                    const response = await fetch(requestUrl, {
-                        method: 'GET',
-                        headers: {
-                            Accept: 'application/octet-stream',
-                            Authorization: `Bearer ${localStorage.getItem('token')}`,
-                        },
-                    });
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorMessage;
+                } catch (e) {
+                    // 如果无法解析JSON，使用默认错误消息
+                }
+                throw new Error(errorMessage);
+            }
 
-                    console.log(`📡 Response for ${file.originalName}:`, {
-                        status: response.status,
-                        headers: Object.fromEntries(response.headers.entries()),
-                    });
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength) : null;
+            
+            if (!response.body) {
+                throw new Error('响应体为空');
+            }
 
-                    if (!response.ok) {
-                        throw new Error(`服务器返回状态码: ${response.status}`);
-                    }
+            hideProgress();
+            hideProgress = message.loading('正在下载ZIP文件...', 0);
 
-                    const contentLength = response.headers.get('Content-Length');
-                    const reader = response.body.getReader();
-                    const total = contentLength ? parseInt(contentLength) : null;
+            const reader = response.body.getReader();
+            const chunks = [];
+            let received = 0;
 
-                    const chunks = [];
-                    let received = 0;
-
-                    while (true) {
-                        const {done, value} = await reader.read();
-                        if (done) break;
-                        chunks.push(value);
-                        received += value.length;
-                        console.log(`📥 进度 (${file.originalName}, 尝试 ${attempt}): ${received}/${total || '未知'} bytes`);
-                    }
-
-                    const blob = new Blob(chunks, {type: 'application/octet-stream'});
-
-                    if (blob.size === 0) {
-                        console.warn(`⚠️ 空响应: ${file.originalName}`);
-                        message.error(`文件 ${file.originalName} 数据为空`);
-                        return false;
-                    }
-
-                    const folderPath = file.folderPath || 'Uncategorized';
-                    const folder = zip.folder(folderPath);
-                    folder.file(file.originalName, blob, {binary: true});
-
-                    console.log(`✅ 添加成功: ${file.originalName} (size: ${blob.size} bytes)`);
-                    return true;
-                } catch (err) {
-                    console.error(`❌ 下载失败: ${file.originalName} (尝试 ${attempt}/${retries})`, {
-                        errorMessage: err.message,
-                        requestUrl,
-                        stack: err.stack,
-                    });
-
-                    if (attempt < retries) {
-                        console.log(`🔄 等待 ${retryDelay}ms 后重试...`);
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
-                        continue;
-                    }
-
-                    message.error(`🔥 最终下载失败: ${file.originalName} - ${err.message}`);
-                    return false;
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                chunks.push(value);
+                received += value.length;
+                
+                // 更新进度
+                if (total) {
+                    const progress = Math.round((received / total) * 100);
+                    hideProgress();
+                    hideProgress = message.loading(`下载进度: ${progress}% (${(received / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB)`, 0);
+                } else {
+                    hideProgress();
+                    hideProgress = message.loading(`已下载: ${(received / 1024 / 1024).toFixed(1)}MB`, 0);
                 }
             }
 
-            return false;
-        };
+            // 创建下载链接
+            const blob = new Blob(chunks);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'batch_download.zip';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
 
-
-        try {
-            setLoading(true);
-
-            const downloadPromises = selectedFiles.map(file => downloadFileWithRetry(file));
-            const results = await Promise.all(downloadPromises);
-
-            if (!results.some(success => success)) {
-                throw new Error('没有任何文件成功下载');
-            }
-
-            const zipBlob = await zip.generateAsync({type: 'blob'});
-            saveAs(zipBlob, 'downloaded_files.zip');
-            message.success('下载已开始');
-            console.log('🎉 ZIP 文件生成并下载');
+            hideProgress();
+            message.success(`批量下载完成！共 ${fileIds.length} 个文件`);
+            console.log(`✅ 批量下载完成`);
+            
         } catch (error) {
-            console.error('🔥 下载流程异常:', {
+            hideProgress();
+            console.error('🔥 批量下载失败:', {
                 message: error.message,
-                code: error.code || 'Unknown',
                 stack: error.stack,
             });
-            message.error('下载失败: ' + (error.message || '未知错误'));
+            
+            // 显示详细错误信息
+            Modal.error({
+                title: '批量下载失败',
+                content: (
+                    <div>
+                        <p><strong>选中文件数:</strong> {selectedFiles.length}</p>
+                        <p><strong>预计大小:</strong> {totalSizeMB.toFixed(1)}MB</p>
+                        <p><strong>错误信息:</strong> {error.message}</p>
+                        <p><strong>建议:</strong></p>
+                        <ul>
+                            <li>检查网络连接是否稳定</li>
+                            <li>文件总大小过大，建议分批下载</li>
+                            <li>尝试单个文件下载</li>
+                            <li>如果问题持续，请联系管理员</li>
+                        </ul>
+                    </div>
+                ),
+                width: 500,
+            });
         } finally {
             setLoading(false);
+        }
+    };
+
+    // 单文件下载函数 - 带进度显示
+    const handleSingleDownload = async (record) => {
+        const baseUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+        const fileId = record.key.split('/').pop();
+        
+        // 创建进度提示
+        let hideProgress = message.loading(`正在下载 ${record.originalName}...`, 0);
+        
+        try {
+            console.log(`📥 开始单文件下载: ${record.originalName}`);
+            
+            const response = await fetch(`${baseUrl}/api/download/${fileId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`服务器返回错误: ${response.status} ${response.statusText}`);
+            }
+
+            const contentLength = response.headers.get('Content-Length');
+            const total = contentLength ? parseInt(contentLength) : null;
+            
+            if (!response.body) {
+                throw new Error('响应体为空');
+            }
+
+            const reader = response.body.getReader();
+            const chunks = [];
+            let received = 0;
+            let lastUpdateTime = Date.now();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                chunks.push(value);
+                received += value.length;
+                
+                // 限制进度更新频率，避免过于频繁的UI更新
+                const now = Date.now();
+                if (now - lastUpdateTime > 500) { // 每500ms更新一次
+                    hideProgress();
+                    if (total) {
+                        const progress = Math.round((received / total) * 100);
+                        hideProgress = message.loading(`下载进度: ${progress}% (${(received / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB)`, 0);
+                    } else {
+                        hideProgress = message.loading(`已下载: ${(received / 1024 / 1024).toFixed(1)}MB`, 0);
+                    }
+                    lastUpdateTime = now;
+                }
+            }
+
+            // 创建blob并下载
+            const blob = new Blob(chunks);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = record.originalName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            hideProgress();
+            message.success(`文件 ${record.originalName} 下载完成！`);
+            
+        } catch (error) {
+            hideProgress();
+            console.error('单文件下载失败:', error);
+            
+            // 显示详细错误信息
+            Modal.error({
+                title: '下载失败',
+                content: (
+                    <div>
+                        <p><strong>文件:</strong> {record.originalName}</p>
+                        <p><strong>错误:</strong> {error.message}</p>
+                        <p><strong>建议:</strong></p>
+                        <ul>
+                            <li>检查网络连接</li>
+                            <li>文件可能过大，请稍后重试</li>
+                            <li>如果问题持续，请联系管理员</li>
+                        </ul>
+                    </div>
+                ),
+                width: 500,
+            });
         }
     };
 
@@ -602,6 +711,7 @@ const DataList = () => {
                 } else {
                     return (
                         <Space size="middle">
+                            <a onClick={() => handleSingleDownload(record)}>下载</a>
                             <a onClick={() => handleEdit(record)}>编辑</a>
                             <a onClick={() => handleDelete(record.key.split('/').pop())}>删除</a>
                         </Space>

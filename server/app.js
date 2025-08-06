@@ -25,8 +25,8 @@ app.use(express.json({ limit: '12gb' })); // 增加到12GB支持超大文件
 app.use(express.urlencoded({ limit: '12gb', extended: true }));
 
 // 静态文件服务
-const uploadsPath = process.env.NODE_ENV === 'production' 
-  ? '/app/Uploads' 
+const uploadsPath = process.env.NODE_ENV === 'production'
+  ? '/app/Uploads'
   : '/home/sen/gitee/datemanager/Uploads';
 app.use('/Uploads', express.static(uploadsPath));
 app.use('/datasets', express.static(path.join(__dirname, '../datasets')));
@@ -41,7 +41,7 @@ const initializeDictionary = async () => {
     const Dictionary = require('./models/dictionary');
     console.log('Dictionary class loaded:', typeof Dictionary);
     console.log('Dictionary methods:', Object.getOwnPropertyNames(Dictionary));
-    
+
     if (typeof Dictionary.createTable === 'function') {
       await Dictionary.createTable();
       console.log('字典表初始化成功');
@@ -78,7 +78,7 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
   // 设置更长的超时时间用于大文件上传
   req.setTimeout(30 * 60 * 1000); // 30分钟超时
   res.setTimeout(30 * 60 * 1000); // 30分钟超时
-  
+
   upload.single('file')(req, res, async (err) => {
     if (err) {
       console.error('Multer upload error:', err);
@@ -104,20 +104,20 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
       }
 
       const folderPath = req.body.folderPath || '未分类';
-      
+
       console.log(`开始上传文件: ${file.originalname}, 大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-      
+
       // 保存文件到本地
-      const uploadsDir = process.env.NODE_ENV === 'production' 
-        ? '/app/Uploads' 
+      const uploadsDir = process.env.NODE_ENV === 'production'
+        ? '/app/Uploads'
         : path.join(__dirname, '../Uploads');
       if (!require('fs').existsSync(uploadsDir)) {
         require('fs').mkdirSync(uploadsDir, { recursive: true });
       }
-      
+
       const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000000000)}${path.extname(file.originalname)}`;
       const filePath = path.join(uploadsDir, fileName);
-      
+
       // 使用流式写入处理大文件
       const fs = require('fs');
       await new Promise((resolve, reject) => {
@@ -141,7 +141,7 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
           console.warn('获取视频时长失败:', durationError);
         }
       }
-      
+
       const fileData = await File.create({
         fileName: fileName,
         originalName: file.originalname,
@@ -179,12 +179,83 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
   });
 });
 
+// 批量下载路由 - 服务端打包
+app.post('/api/download/batch', authenticateToken, checkPermission('data'), async (req, res) => {
+  try {
+    const { fileIds } = req.body;
+
+    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({ success: false, message: '请提供文件ID列表' });
+    }
+
+    console.log(`📦 开始批量下载，文件数量: ${fileIds.length}`);
+
+    // 获取所有文件信息
+    const files = [];
+    for (const id of fileIds) {
+      const file = await File.findById(id);
+      if (file && fs.existsSync(file.path)) {
+        files.push(file);
+      } else {
+        console.warn(`文件不存在或已删除: ID=${id}`);
+      }
+    }
+
+    if (files.length === 0) {
+      return res.status(404).json({ success: false, message: '没有找到可下载的文件' });
+    }
+
+    console.log(`📁 找到 ${files.length} 个有效文件`);
+
+    // 设置响应头
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="batch_download.zip"');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    // 使用archiver创建ZIP流
+    const archiver = require('archiver');
+    const archive = archiver('zip', {
+      zlib: { level: 1 } // 使用最快的压缩级别
+    });
+
+    // 处理错误
+    archive.on('error', (err) => {
+      console.error('ZIP创建错误:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'ZIP创建失败' });
+      }
+    });
+
+    // 将archive流连接到响应
+    archive.pipe(res);
+
+    // 添加文件到ZIP
+    for (const file of files) {
+      const folderPath = file.folderPath || 'Uncategorized';
+      const zipPath = `${folderPath}/${file.originalName}`;
+
+      console.log(`📄 添加文件到ZIP: ${zipPath}`);
+      archive.file(file.path, { name: zipPath });
+    }
+
+    // 完成ZIP创建
+    await archive.finalize();
+    console.log(`✅ 批量下载完成，总文件数: ${files.length}`);
+
+  } catch (error) {
+    console.error('批量下载错误:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: '批量下载失败', error: error.message });
+    }
+  }
+});
+
 // 添加清除数据库的直接路由
 app.delete('/api/clear-database', authenticateToken, checkPermission('data'), async (req, res) => {
   try {
     console.log('开始清除数据库...');
     const files = await File.findAll();
-    
+
     // 删除本地文件
     for (const file of files) {
       try {
@@ -196,10 +267,10 @@ app.delete('/api/clear-database', authenticateToken, checkPermission('data'), as
         console.error(`删除本地文件异常: ${file.path}`, error);
       }
     }
-    
+
     // 清空数据库
     await File.deleteAll();
-    
+
     // 记录清除操作
     await logAction({
       userId: req.user.id,
@@ -208,9 +279,9 @@ app.delete('/api/clear-database', authenticateToken, checkPermission('data'), as
       details: `清除所有数据库记录和本地文件，共 ${files.length} 个文件`,
       ipAddress: req.ip,
     });
-    
+
     console.log(`清除完成 - 删除了 ${files.length} 个文件`);
-    
+
     res.json({
       success: true,
       message: `数据库和本地文件已清除，共删除 ${files.length} 个文件`,
@@ -241,7 +312,7 @@ const isFirstPartOfSplit = (filename) => {
 const findSplitParts = async (baseFile) => {
   const parts = [];
   const baseName = baseFile.originalName;
-  
+
   // 不同的分割文件命名模式
   const patterns = [
     // split命令模式: images_part_aa, images_part_ab, ...
@@ -251,7 +322,7 @@ const findSplitParts = async (baseFile) => {
     // zip分卷模式: images.zip.001, images.zip.002, ...
     { prefix: baseName.replace('.zip.001', '.zip.'), suffixes: ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012', '013', '014', '015', '016'] }
   ];
-  
+
   for (const pattern of patterns) {
     for (const suffix of pattern.suffixes) {
       const expectedName = pattern.prefix + suffix;
@@ -271,7 +342,7 @@ const findSplitParts = async (baseFile) => {
     }
     if (parts.length > 0) break; // 如果找到了分割文件，停止尝试其他模式
   }
-  
+
   return parts;
 };
 
@@ -280,37 +351,62 @@ const mergeSplitFiles = async (parts, outputPath) => {
   return new Promise((resolve, reject) => {
     const writeStream = fs.createWriteStream(outputPath);
     let currentIndex = 0;
-    
+
     const mergeNext = () => {
       if (currentIndex >= parts.length) {
         writeStream.end();
         resolve();
         return;
       }
-      
+
       const part = parts[currentIndex];
       console.log(`📦 合并分割文件 ${currentIndex + 1}/${parts.length}: ${part.originalName}`);
-      
+
       const readStream = fs.createReadStream(part.path);
       readStream.pipe(writeStream, { end: false });
-      
+
       readStream.on('end', () => {
         currentIndex++;
         mergeNext();
       });
-      
+
       readStream.on('error', (error) => {
         writeStream.destroy();
         reject(error);
       });
     };
-    
+
     writeStream.on('error', reject);
     mergeNext();
   });
 };
 
-app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (req, res) => {
+// 修改认证中间件以支持URL参数中的token
+const authenticateTokenFlexible = (req, res, next) => {
+  // 首先尝试从Authorization header获取token
+  let token = req.headers.authorization?.replace('Bearer ', '');
+  
+  // 如果header中没有token，尝试从URL参数获取
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+  
+  if (!token) {
+    return res.status(401).json({ success: false, message: '未提供访问令牌' });
+  }
+  
+  // 验证token的逻辑（复制自原authenticateToken中间件）
+  const jwt = require('jsonwebtoken');
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ success: false, message: '无效的访问令牌' });
+  }
+};
+
+app.get('/api/download/:id', authenticateTokenFlexible, checkPermission('data'), async (req, res) => {
   try {
     console.log(`📩 收到下载请求:`, {
       id: req.params.id,
@@ -330,8 +426,8 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
     // 检查本地文件是否存在
     if (!fs.existsSync(file.path)) {
       console.error(`本地文件不存在: ${file.path}`);
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         message: '文件不存在'
       });
     }
@@ -343,33 +439,33 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
     // 检查是否为分割文件的第一部分
     if (isFirstPartOfSplit(file.originalName)) {
       console.log(`🔍 检测到分割文件，开始查找所有分割部分...`);
-      
+
       const parts = await findSplitParts(file);
       if (parts.length > 1) {
         console.log(`📦 找到 ${parts.length} 个分割文件，开始合并...`);
-        
+
         // 创建临时合并文件
         const tempDir = path.join(__dirname, '../temp');
         if (!fs.existsSync(tempDir)) {
           fs.mkdirSync(tempDir, { recursive: true });
         }
-        
+
         // 生成合并后的文件名
         finalFileName = file.originalName.replace(/_part_aa|\.001/, '');
         if (!finalFileName.includes('.')) {
           finalFileName += '.zip'; // 默认添加.zip扩展名
         }
-        
+
         finalFilePath = path.join(tempDir, `merged_${Date.now()}_${finalFileName}`);
-        
+
         try {
           await mergeSplitFiles(parts, finalFilePath);
           shouldCleanup = true;
           console.log(`✅ 分割文件合并完成: ${finalFilePath}`);
         } catch (mergeError) {
           console.error('合并分割文件失败:', mergeError);
-          return res.status(500).json({ 
-            success: false, 
+          return res.status(500).json({
+            success: false,
             message: '合并分割文件失败',
             error: mergeError.message
           });
@@ -378,7 +474,7 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
     }
 
     const fileStats = fs.statSync(finalFilePath);
-    
+
     // 设置响应头
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader(
@@ -398,10 +494,10 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
     // 发送文件数据
     const fileStream = fs.createReadStream(finalFilePath);
     fileStream.pipe(res);
-    
+
     fileStream.on('end', () => {
       console.log(`✅ 文件 ${finalFileName} 下载完成, 总计传输: ${fileStats.size} bytes`);
-      
+
       // 清理临时合并文件
       if (shouldCleanup) {
         setTimeout(() => {
@@ -414,7 +510,7 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
         }, 5000); // 5秒后清理
       }
     });
-    
+
     fileStream.on('error', (streamError) => {
       console.error('文件流错误:', streamError);
       if (shouldCleanup) {
@@ -425,7 +521,7 @@ app.get('/api/download/:id', authenticateToken, checkPermission('data'), async (
         }
       }
     });
-    
+
   } catch (error) {
     console.error('下载文件错误:', {
       id: req.params.id,
@@ -471,7 +567,7 @@ app.use('*', (req, res) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 3001;
   const HOST = process.env.HOST || '0.0.0.0';
-  
+
   app.listen(PORT, HOST, () => {
     console.log(`服务器运行在 ${HOST}:${PORT}`);
     console.log(`本地访问: http://localhost:${PORT}`);
