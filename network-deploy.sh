@@ -1,281 +1,398 @@
 #!/bin/bash
 
-# 局域网部署脚本 - 支持局域网内所有设备访问
-# 使用方法: ./network-deploy.sh [HOST_IP]
+# ===========================================
+# 数据管理平台 - 网络环境部署脚本
+# 功能：支持不同网络环境的自动部署
+# ===========================================
 
 set -e
 
-# 获取主机IP地址
-if [ -n "$1" ]; then
-    HOST_IP="$1"
-else
-    # 自动检测主机IP（Docker容器的宿主机IP）
-    HOST_IP=$(ip route | grep default | awk '{print $3}' | head -1)
-    if [ -z "$HOST_IP" ]; then
-        # 备用方法：获取第一个非回环网络接口的IP
-        HOST_IP=$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' | cut -d'/' -f1)
-    fi
-fi
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-echo "🌐 Date Manager 局域网部署脚本"
-echo "================================"
-echo "🖥️  检测到主机IP: $HOST_IP"
-echo "🔌 应用将在以下地址可访问:"
-echo "   - 本地访问: http://localhost:3001"
-echo "   - 局域网访问: http://$HOST_IP:3001"
-echo ""
+log() {
+    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
 
-# 设置变量
-APP_DIR="/app/datemanager"
-BACKUP_DIR="/backup"
-LOG_FILE="/tmp/network-deploy.log"
+log_success() {
+    echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
 
-# 创建日志文件
-exec 1> >(tee -a $LOG_FILE)
-exec 2> >(tee -a $LOG_FILE >&2)
+log_warning() {
+    echo -e "${YELLOW}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
 
-# 检查并安装系统依赖
-echo "🔍 检查系统依赖..."
-apt-get update
+log_error() {
+    echo -e "${RED}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
 
-# 安装必要的网络工具
-apt-get install -y net-tools iproute2 curl wget
-
-if ! command -v node &> /dev/null; then
-    echo "📦 安装Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-    apt-get install -y nodejs
-fi
-
-if ! command -v python3 &> /dev/null; then
-    echo "📦 安装Python3..."
-    apt-get install -y python3 python3-pip
-fi
-
-if ! command -v ffmpeg &> /dev/null; then
-    echo "📦 安装FFmpeg..."
-    apt-get install -y ffmpeg sqlite3
-fi
-
-# 安装Python依赖
-echo "🐍 安装Python依赖..."
-pip3 install --no-cache-dir pandas numpy pyarrow joblib
-
-# 停止现有服务
-if systemctl is-active --quiet datemanager 2>/dev/null; then
-    echo "⏹️  停止现有服务..."
-    systemctl stop datemanager
-fi
-
-# 备份现有应用
-if [ -d "$APP_DIR" ]; then
-    echo "💾 备份现有应用..."
-    mkdir -p $BACKUP_DIR
-    mv $APP_DIR $BACKUP_DIR/datemanager_backup_$(date +%Y%m%d_%H%M%S)
-fi
-
-# 创建应用目录
-echo "📁 创建应用目录..."
-mkdir -p $APP_DIR
-cp -r . $APP_DIR/
-cd $APP_DIR
-
-# 构建前端
-echo "🔨 构建前端应用..."
-npm install --production
-npm run build
-
-# 安装后端依赖
-echo "🔧 安装后端依赖..."
-cd server
-npm install --production
-cd ..
-
-# 创建必要目录
-echo "📁 创建数据目录..."
-mkdir -p $APP_DIR/Uploads
-mkdir -p $APP_DIR/server/data
-mkdir -p $APP_DIR/server/cache
-mkdir -p /tmp/uploads
-
-# 创建局域网环境配置
-echo "⚙️  创建局域网环境配置..."
-cat > $APP_DIR/.env.production << EOF
-NODE_ENV=production
-PORT=3001
-HOST=0.0.0.0
-
-# 局域网访问配置
-FRONTEND_URL=http://$HOST_IP:3001
-API_BASE_URL=http://$HOST_IP:3001/api
-
-# 数据库配置
-DB_PATH=$APP_DIR/server/data/datemanager.db
-
-# 缓存配置
-CACHE_TYPE=memory
-
-# 文件上传配置
-MAX_FILE_SIZE=100MB
-UPLOAD_TEMP_DIR=/tmp/uploads
-
-# 安全配置
-JWT_SECRET=$(openssl rand -base64 32)
-BCRYPT_ROUNDS=10
-
-# 网络配置
-CORS_ORIGIN=*
-TRUST_PROXY=true
-EOF
-
-# 修改服务器配置以支持局域网访问
-echo "🔧 配置服务器支持局域网访问..."
-
-# 更新app.js中的环境变量加载路径
-sed -i "s|require('dotenv').config({ path: '../.env.local' });|require('dotenv').config({ path: '$APP_DIR/.env.production' });|g" $APP_DIR/server/app.js
-
-# 更新CORS配置以支持局域网访问
-cat > $APP_DIR/server/config/cors.js << 'EOF'
-const cors = require('cors');
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // 允许所有来源（开发和局域网访问）
-    callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
-};
-
-module.exports = cors(corsOptions);
-EOF
-
-# 创建systemd服务
-echo "📋 创建系统服务..."
-cat > /etc/systemd/system/datemanager.service << EOF
-[Unit]
-Description=Date Manager Application (Network Access)
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$APP_DIR/server
-Environment=NODE_ENV=production
-Environment=HOST=0.0.0.0
-Environment=PORT=3001
-EnvironmentFile=$APP_DIR/.env.production
-ExecStart=/usr/bin/node app.js
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 重新加载systemd并启用服务
-systemctl daemon-reload
-systemctl enable datemanager
-
-# 设置权限
-echo "🔐 设置权限..."
-chown -R root:root $APP_DIR
-chmod -R 755 $APP_DIR
-
-# 配置防火墙（如果存在）
-if command -v ufw &> /dev/null; then
-    echo "🔥 配置防火墙..."
-    ufw allow 3001/tcp
-elif command -v iptables &> /dev/null; then
-    echo "🔥 配置iptables..."
-    iptables -A INPUT -p tcp --dport 3001 -j ACCEPT
-    # 保存iptables规则（如果支持）
-    if command -v iptables-save &> /dev/null; then
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-    fi
-fi
-
-# 启动服务
-echo "🚀 启动服务..."
-systemctl start datemanager
-
-# 等待服务启动
-echo "⏳ 等待服务启动..."
-sleep 5
-
-# 检查服务状态
-if systemctl is-active --quiet datemanager; then
-    echo "✅ 服务启动成功!"
+# 检测网络环境
+detect_network_environment() {
+    log "检测网络环境..."
     
-    # 测试本地访问
-    for i in {1..10}; do
-        if curl -f http://localhost:3001/api/health > /dev/null 2>&1; then
-            echo "✅ 本地访问测试通过!"
-            break
-        else
-            echo "⏳ 等待应用启动... ($i/10)"
-            sleep 2
+    local current_ip=$(hostname -I | awk '{print $1}')
+    local network_type=""
+    
+    if [[ $current_ip =~ ^192\.168\. ]]; then
+        network_type="home"
+        log "检测到家庭网络环境: $current_ip"
+    elif [[ $current_ip =~ ^10\. ]]; then
+        network_type="corporate"
+        log "检测到企业网络环境: $current_ip"
+    elif [[ $current_ip =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+        network_type="docker"
+        log "检测到Docker网络环境: $current_ip"
+    else
+        network_type="public"
+        log "检测到公网环境: $current_ip"
+    fi
+    
+    echo "$network_type:$current_ip"
+}
+
+# 扫描网络中的潜在服务器
+scan_network_servers() {
+    local current_ip="$1"
+    local network_prefix=$(echo $current_ip | cut -d'.' -f1-3)
+    
+    log "扫描网络中的数据管理平台服务器..."
+    
+    local found_servers=()
+    local scan_ips=(
+        "$current_ip"                    # 本机
+        "${network_prefix}.1"            # 网关
+        "${network_prefix}.10"           # 常见服务器IP
+        "${network_prefix}.94"           # 你当前的服务器IP
+        "${network_prefix}.100"          # 常见服务器IP
+        "${network_prefix}.200"          # 常见服务器IP
+    )
+    
+    echo "🔍 扫描IP范围: ${network_prefix}.x"
+    
+    for ip in "${scan_ips[@]}"; do
+        # 检查Web服务
+        if timeout 2 curl -s "http://$ip:3001/api/health" | grep -q "healthy" 2>/dev/null; then
+            found_servers+=("$ip:web")
+            log_success "发现Web服务: $ip:3001"
         fi
         
-        if [ $i -eq 10 ]; then
-            echo "⚠️  应用可能启动异常，请检查日志"
+        # 检查SSH服务
+        if timeout 2 nc -z "$ip" 22 2>/dev/null; then
+            found_servers+=("$ip:ssh")
+            log_success "发现SSH服务: $ip:22"
         fi
     done
     
-    # 测试局域网访问
-    echo "🌐 测试局域网访问..."
-    if curl -f http://$HOST_IP:3001/api/health > /dev/null 2>&1; then
-        echo "✅ 局域网访问测试通过!"
+    if [ ${#found_servers[@]} -gt 0 ]; then
+        echo "找到的服务器:"
+        printf '%s\n' "${found_servers[@]}"
     else
-        echo "⚠️  局域网访问可能需要额外配置"
+        log_warning "未找到现有的数据管理平台服务器"
     fi
-else
-    echo "❌ 服务启动失败!"
-    systemctl status datemanager
-    exit 1
-fi
+    
+    echo "${found_servers[@]}"
+}
 
-# 显示网络信息
-echo ""
-echo "🎉 局域网部署完成!"
-echo "================================"
-echo "📍 应用目录: $APP_DIR"
-echo "🌐 访问地址:"
-echo "   - 本地访问: http://localhost:3001"
-echo "   - 局域网访问: http://$HOST_IP:3001"
-echo "   - 容器内访问: http://10.30.30.94:3001"
-echo ""
-echo "👤 默认管理员: admin / admin123"
-echo ""
-echo "🔌 网络配置:"
-echo "   - 监听地址: 0.0.0.0:3001"
-echo "   - 主机IP: $HOST_IP"
-echo "   - CORS: 允许所有来源"
-echo ""
-echo "📊 常用命令:"
-echo "  查看状态: systemctl status datemanager"
-echo "  查看日志: journalctl -u datemanager -f"
-echo "  重启服务: systemctl restart datemanager"
-echo "  停止服务: systemctl stop datemanager"
-echo ""
-echo "🔍 网络测试:"
-echo "  本地健康检查: curl http://localhost:3001/api/health"
-echo "  局域网健康检查: curl http://$HOST_IP:3001/api/health"
-echo ""
-echo "📝 部署日志: $LOG_FILE"
-echo "💾 备份位置: $BACKUP_DIR"
+# 选择部署模式
+choose_deployment_mode() {
+    local found_servers="$1"
+    
+    echo ""
+    echo "请选择部署模式："
+    echo "1. 本地部署 (直接在当前机器运行)"
+    echo "2. Docker部署 (推荐，容器化部署)"
+    echo "3. 连接现有服务器 (如果网络中已有服务器)"
+    echo ""
+    
+    if [ -n "$found_servers" ]; then
+        echo "检测到现有服务器："
+        echo "$found_servers"
+        echo ""
+    fi
+    
+    while true; do
+        read -p "请选择部署模式 (1-3): " choice
+        case $choice in
+            1)
+                echo "local"
+                return 0
+                ;;
+            2)
+                echo "docker"
+                return 0
+                ;;
+            3)
+                if [ -n "$found_servers" ]; then
+                    echo "existing"
+                    return 0
+                else
+                    log_error "未检测到现有服务器"
+                fi
+                ;;
+            *)
+                log_error "无效选择，请输入1-3"
+                ;;
+        esac
+    done
+}
 
-# 显示局域网内其他设备的访问说明
-echo ""
-echo "📱 局域网内其他设备访问说明:"
-echo "================================"
-echo "1. 确保所有设备在同一局域网内"
-echo "2. 在其他设备的浏览器中访问: http://$HOST_IP:3001"
-echo "3. 如果无法访问，请检查:"
-echo "   - 防火墙设置"
-echo "   - Docker端口映射"
-echo "   - 网络连通性: ping $HOST_IP"
+# 本地部署
+deploy_local() {
+    local current_ip="$1"
+    
+    log "开始本地部署..."
+    
+    # 检查Node.js环境
+    if ! command -v node &> /dev/null; then
+        log_error "Node.js未安装，请先安装Node.js"
+        echo "安装方法："
+        echo "  Ubuntu: curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs"
+        echo "  macOS: brew install node"
+        return 1
+    fi
+    
+    # 安装依赖
+    log "安装依赖..."
+    npm install
+    cd server && npm install && cd ..
+    
+    # 构建前端
+    log "构建前端..."
+    npm run build
+    
+    # 设置上传用户
+    if [ ! -f "setup_upload_user.sh" ]; then
+        log_error "setup_upload_user.sh 脚本不存在"
+        return 1
+    fi
+    
+    log "设置上传用户..."
+    sudo ./setup_upload_user.sh
+    
+    # 启动服务
+    log "启动服务..."
+    cd server
+    nohup npm run dev > ../server.log 2>&1 &
+    SERVER_PID=$!
+    cd ..
+    
+    # 等待服务启动
+    sleep 5
+    
+    if curl -s "http://$current_ip:3001/api/health" | grep -q "healthy"; then
+        log_success "本地部署成功"
+        echo "Web访问: http://$current_ip:3001"
+        echo "服务PID: $SERVER_PID"
+        
+        # 保存PID
+        echo "$SERVER_PID" > server.pid
+        
+        return 0
+    else
+        log_error "本地部署失败"
+        return 1
+    fi
+}
+
+# Docker部署
+deploy_docker() {
+    log "开始Docker部署..."
+    
+    if [ ! -f "container-deploy.sh" ]; then
+        log_error "container-deploy.sh 脚本不存在"
+        return 1
+    fi
+    
+    chmod +x container-deploy.sh
+    ./container-deploy.sh
+    
+    return $?
+}
+
+# 连接现有服务器
+connect_existing() {
+    local found_servers="$1"
+    
+    log "连接现有服务器..."
+    
+    # 解析服务器列表
+    local servers=($(echo "$found_servers" | tr ' ' '\n' | grep ":web" | cut -d':' -f1))
+    
+    if [ ${#servers[@]} -eq 0 ]; then
+        log_error "未找到可用的Web服务器"
+        return 1
+    fi
+    
+    local server_ip="${servers[0]}"
+    log "连接到服务器: $server_ip"
+    
+    # 测试连接
+    if curl -s "http://$server_ip:3001/api/health" | grep -q "healthy"; then
+        log_success "连接成功"
+        echo "Web访问: http://$server_ip:3001"
+        
+        # 创建用户上传脚本
+        create_user_upload_script "$server_ip"
+        
+        return 0
+    else
+        log_error "连接失败"
+        return 1
+    fi
+}
+
+# 创建用户上传脚本
+create_user_upload_script() {
+    local server_ip="$1"
+    
+    log "创建用户上传脚本..."
+    
+    # 创建针对特定服务器的上传脚本
+    if [ -f "auto_upload.sh" ]; then
+        local script_name="upload_to_${server_ip//./_}.sh"
+        
+        # 复制并修改脚本
+        cp auto_upload.sh "$script_name"
+        
+        # 在脚本中硬编码服务器IP
+        sed -i "s/detect_server_ip()/echo \"$server_ip\"/" "$script_name"
+        
+        chmod +x "$script_name"
+        
+        log_success "创建上传脚本: $script_name"
+        
+        # 创建使用说明
+        cat > "upload_instructions_${server_ip//./_}.txt" << EOF
+数据管理平台 - 上传工具使用说明
+================================
+
+服务器信息:
+- IP地址: $server_ip
+- Web界面: http://$server_ip:3001
+- SSH端口: 22
+
+使用方法:
+1. 将 $script_name 复制到要上传的文件夹中
+2. 运行脚本: ./$script_name
+3. 按提示完成上传
+
+首次使用需要配置SSH密钥，请联系管理员。
+
+创建时间: $(date)
+EOF
+        
+        log_success "创建使用说明: upload_instructions_${server_ip//./_}.txt"
+    fi
+}
+
+# 显示部署结果
+show_deployment_result() {
+    local mode="$1"
+    local server_ip="$2"
+    local status="$3"
+    
+    echo ""
+    echo "========================================"
+    echo "    数据管理平台 - 部署结果"
+    echo "========================================"
+    
+    if [ "$status" = "success" ]; then
+        echo "✅ 部署成功！"
+        echo ""
+        echo "部署模式: $mode"
+        echo "服务器IP: $server_ip"
+        echo "Web访问: http://$server_ip:3001"
+        echo ""
+        
+        case $mode in
+            "local")
+                echo "管理命令:"
+                echo "  - 停止服务: kill \$(cat server.pid)"
+                echo "  - 查看日志: tail -f server.log"
+                ;;
+            "docker")
+                echo "管理命令:"
+                echo "  - 查看日志: docker logs datemanager-app"
+                echo "  - 停止容器: docker-compose down"
+                ;;
+            "existing")
+                echo "连接信息:"
+                echo "  - 使用现有服务器"
+                echo "  - 上传脚本已创建"
+                ;;
+        esac
+        
+        echo ""
+        echo "用户上传工具:"
+        ls -la upload_to_*.sh 2>/dev/null || echo "  - 请使用 auto_upload.sh"
+        
+    else
+        echo "❌ 部署失败！"
+        echo ""
+        echo "请检查错误信息并重试"
+    fi
+    
+    echo "========================================"
+}
+
+# 主函数
+main() {
+    echo "========================================"
+    echo "  数据管理平台 - 智能部署脚本"
+    echo "========================================"
+    echo ""
+    
+    # 检测网络环境
+    local network_info=$(detect_network_environment)
+    local network_type=$(echo "$network_info" | cut -d':' -f1)
+    local current_ip=$(echo "$network_info" | cut -d':' -f2)
+    
+    # 扫描网络服务器
+    local found_servers=$(scan_network_servers "$current_ip")
+    
+    # 选择部署模式
+    local deployment_mode=$(choose_deployment_mode "$found_servers")
+    
+    echo ""
+    log "选择的部署模式: $deployment_mode"
+    
+    # 执行部署
+    local deployment_status="failed"
+    
+    case $deployment_mode in
+        "local")
+            if deploy_local "$current_ip"; then
+                deployment_status="success"
+            fi
+            ;;
+        "docker")
+            if deploy_docker; then
+                deployment_status="success"
+            fi
+            ;;
+        "existing")
+            if connect_existing "$found_servers"; then
+                deployment_status="success"
+            fi
+            ;;
+    esac
+    
+    # 显示结果
+    show_deployment_result "$deployment_mode" "$current_ip" "$deployment_status"
+    
+    if [ "$deployment_status" = "success" ]; then
+        exit 0
+    else
+        exit 1
+    fi
+}
+
+# 处理中断信号
+trap 'log "部署被中断"; exit 1' INT TERM
+
+# 执行主函数
+main "$@"

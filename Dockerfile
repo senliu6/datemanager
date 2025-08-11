@@ -16,16 +16,28 @@ COPY vite.config.js ./
 # 构建前端
 RUN npm run build
 
-# 后端运行阶段
-FROM node:18-alpine AS backend
+# 后端运行阶段 - 使用Ubuntu支持SSH
+FROM ubuntu:22.04 AS backend
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_VERSION=18
 
 # 安装系统依赖
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    openssh-server \
+    rsync \
+    sqlite3 \
     python3 \
-    py3-pip \
+    python3-pip \
     ffmpeg \
-    sqlite \
-    && ln -sf python3 /usr/bin/python
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs
 
 # 安装Python依赖
 RUN pip3 install --no-cache-dir \
@@ -60,7 +72,7 @@ RUN mkdir -p /app/Uploads \
 RUN chown -R node:node /app
 
 # 暴露端口
-EXPOSE 3001
+EXPOSE 3001 22
 
 # 设置工作目录
 WORKDIR /app

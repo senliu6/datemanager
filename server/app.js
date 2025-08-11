@@ -65,6 +65,7 @@ app.use('/api/lerobot', lerobotRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/dictionary', require('./routes/dictionary'));
+app.use('/api/remote-sync', require('./routes/remoteSync'));
 
 // 添加直接的上传路由，方便前端调用
 const upload = require('./middleware/upload');
@@ -385,16 +386,16 @@ const mergeSplitFiles = async (parts, outputPath) => {
 const authenticateTokenFlexible = (req, res, next) => {
   // 首先尝试从Authorization header获取token
   let token = req.headers.authorization?.replace('Bearer ', '');
-  
+
   // 如果header中没有token，尝试从URL参数获取
   if (!token && req.query.token) {
     token = req.query.token;
   }
-  
+
   if (!token) {
     return res.status(401).json({ success: false, message: '未提供访问令牌' });
   }
-  
+
   // 验证token的逻辑（复制自原authenticateToken中间件）
   const jwt = require('jsonwebtoken');
   try {
@@ -553,6 +554,56 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// 检查文件是否已存在的端点
+app.post('/api/check-file', authenticateToken, checkPermission('upload'), async (req, res) => {
+  try {
+    const { fileName, fileSize, folderPath } = req.body;
+    
+    if (!fileName) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少文件名参数'
+      });
+    }
+
+    // 查找相同文件名、大小和文件夹路径的文件
+    const existingFiles = await File.findByOriginalName(fileName);
+    
+    for (const file of existingFiles) {
+      // 检查文件名、大小和文件夹路径是否完全匹配
+      if (file.originalName === fileName && 
+          file.size === fileSize && 
+          file.folderPath === (folderPath || '未分类')) {
+        
+        // 检查物理文件是否还存在
+        const fs = require('fs');
+        if (fs.existsSync(file.path)) {
+          return res.json({
+            success: true,
+            exists: true,
+            message: '文件已存在',
+            fileId: file.id
+          });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      exists: false,
+      message: '文件不存在，可以上传'
+    });
+
+  } catch (error) {
+    console.error('检查文件存在性错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '检查文件失败',
+      error: error.message
+    });
+  }
 });
 
 // 404 处理

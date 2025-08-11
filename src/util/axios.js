@@ -2,13 +2,13 @@ import axios from 'axios';
 
 // 动态获取API基础URL
 const getBaseURL = () => {
-    // 如果是开发环境且通过localhost访问，使用代理
-    if (import.meta.env.DEV && window.location.hostname === 'localhost') {
-        return '';
-    }
-    
-    // 如果是开发环境但通过IP访问，直接指向后端端口
+    // 开发环境
     if (import.meta.env.DEV) {
+        // 如果通过localhost访问，使用代理
+        if (window.location.hostname === 'localhost') {
+            return '';
+        }
+        // 如果通过IP访问，直接指向后端端口
         const protocol = window.location.protocol;
         const hostname = window.location.hostname;
         return `${protocol}//${hostname}:3001`;

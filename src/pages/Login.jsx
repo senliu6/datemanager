@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { Form, Input, Button, Checkbox, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { API_ENDPOINTS } from '../config/api';
+import axios from '../util/axios';
 
 const Login = () => {
     const navigate = useNavigate();
@@ -12,7 +11,7 @@ const Login = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
-            const response = await axios.post(API_ENDPOINTS.LOGIN, {
+            const response = await axios.post('/api/login', {
                 username: values.username,
                 password: values.password,
                 remember: values.remember,

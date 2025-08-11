@@ -8,16 +8,18 @@ services:
     container_name: datemanager-app
     ports:
       - "3001:3001"
+      - "22:22"  # SSH端口用于文件上传
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - FRONTEND_URL=http://localhost:3001
-      - API_BASE_URL=http://localhost:3001/api
+      - FRONTEND_URL=http://0.0.0.0:3001
+      - API_BASE_URL=http://0.0.0.0:3001/api
       - DB_PATH=/app/server/data/datemanager.db
       - CACHE_TYPE=memory
       - MAX_FILE_SIZE=2GB
       - UPLOAD_TEMP_DIR=/tmp/uploads
       - NODE_OPTIONS=--max-old-space-size=4096 --expose-gc
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-host.docker.internal}
     volumes:
       # 持久化数据库
       - datemanager_db:/app/server/data
@@ -25,6 +27,8 @@ services:
       - datemanager_uploads:/app/Uploads
       # 持久化缓存
       - datemanager_cache:/app/server/cache
+      # SSH配置
+      - datemanager_ssh:/home/upload_user/.ssh
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
@@ -32,6 +36,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # 网络模式，便于IP检测
+    network_mode: bridge
 
 volumes:
   datemanager_db:
@@ -39,4 +45,6 @@ volumes:
   datemanager_uploads:
     driver: local
   datemanager_cache:
+    driver: local
+  datemanager_ssh:
     driver: local

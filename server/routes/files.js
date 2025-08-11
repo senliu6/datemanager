@@ -292,6 +292,117 @@ router.put('/:id', authenticateToken, checkPermission('data'), async (req, res) 
   }
 });
 
+// 批量注册文件到数据库
+router.post('/register-batch', async (req, res) => {
+  try {
+    const { uploadPath } = req.body;
+    
+    if (!uploadPath) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供上传路径'
+      });
+    }
+
+    console.log(`开始注册文件: ${uploadPath}`);
+    
+    const fs = require('fs');
+    const path = require('path');
+    
+    if (!fs.existsSync(uploadPath)) {
+      return res.status(404).json({
+        success: false,
+        message: '上传路径不存在'
+      });
+    }
+
+    let registeredFiles = 0;
+    let skippedFiles = 0;
+    let errorFiles = 0;
+
+    // 递归扫描目录
+    async function scanDirectory(dirPath, relativePath = '') {
+      const items = fs.readdirSync(dirPath);
+      
+      for (const item of items) {
+        const fullPath = path.join(dirPath, item);
+        const stats = fs.statSync(fullPath);
+        
+        if (stats.isDirectory()) {
+          const newRelativePath = relativePath ? path.join(relativePath, item) : item;
+          await scanDirectory(fullPath, newRelativePath);
+        } else if (stats.isFile()) {
+          try {
+            // 检查文件是否已经在数据库中（基于完整路径）
+            const allFiles = await File.findAll();
+            console.log(`检查文件: ${item}, 路径: ${fullPath}`);
+            console.log(`数据库中总文件数: ${allFiles.length}`);
+            
+            const existingFile = allFiles.find(f => f.path === fullPath);
+            console.log(`查找结果: ${existingFile ? 'FOUND' : 'NOT FOUND'}`);
+            
+            if (existingFile) {
+              console.log(`跳过已存在的文件: ${item} (ID: ${existingFile.id})`);
+              skippedFiles++;
+              continue;
+            }
+            
+            console.log(`准备注册新文件: ${item}`);
+            
+            // 生成唯一的文件名
+            const timestamp = Date.now();
+            const randomNum = Math.floor(Math.random() * 1000000000);
+            const ext = path.extname(item);
+            const fileName = `${timestamp}-${randomNum}${ext}`;
+            
+            // 确定文件夹路径
+            let folderPath = relativePath || '未分类';
+            
+            // 创建文件记录
+            await File.create({
+              fileName: fileName,
+              originalName: item,
+              size: stats.size,
+              duration: '未知',
+              path: fullPath,
+              uploader: 'upload_user',
+              tags: [],
+              chunked: false,
+              folderPath: folderPath
+            });
+            
+            registeredFiles++;
+            
+          } catch (error) {
+            console.error(`注册文件失败: ${item}`, error);
+            errorFiles++;
+          }
+        }
+      }
+    }
+    
+    await scanDirectory(uploadPath);
+    
+    res.json({
+      success: true,
+      message: `文件注册完成`,
+      data: {
+        registered: registeredFiles,
+        skipped: skippedFiles,
+        errors: errorFiles
+      }
+    });
+    
+  } catch (error) {
+    console.error('批量注册文件失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '批量注册文件失败',
+      error: error.message
+    });
+  }
+});
+
 // 删除文件
 router.delete('/:id', authenticateToken, checkPermission('data'), async (req, res) => {
   try {

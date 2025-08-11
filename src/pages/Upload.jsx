@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Upload, Card, message, Progress, Button, Space, InputNumber, Alert, Statistic, Row, Col, notification } from 'antd';
-import { InboxOutlined, PauseOutlined, PlayCircleOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Upload, Card, message, Progress, Button, Space, InputNumber, Alert, Statistic, Row, Col, notification, Collapse, List, Typography, Tag } from 'antd';
+import { InboxOutlined, PauseOutlined, PlayCircleOutlined, DeleteOutlined, ReloadOutlined, ExclamationCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import axios from '../util/axios';
 
 const { Dragger } = Upload;
@@ -133,7 +133,14 @@ const UploadPage = () => {
             if (error.name === 'CanceledError') {
                 return;
             }
-            failedFilesRef.current.push({ ...fileItem, error: error.message });
+            failedFilesRef.current.push({ 
+                ...fileItem, 
+                error: error.message,
+                failedAt: new Date().toLocaleString(),
+                folderPath: fileItem.originFileObj.webkitRelativePath
+                    ? fileItem.originFileObj.webkitRelativePath.split('/').slice(0, -1).join('/') || '根目录'
+                    : '根目录'
+            });
             delete uploadProgressRef.current[fileItem.uid];
         } finally {
             activeUploadsRef.current.delete(fileItem.uid);
@@ -659,12 +666,101 @@ const UploadPage = () => {
                         />
 
                         {uploadStats.failed > 0 && (
-                            <Alert
-                                message={`${uploadStats.failed} 个文件上传失败`}
-                                type="error"
-                                showIcon
-                                style={{ marginTop: 16 }}
-                            />
+                            <>
+                                <Alert
+                                    message={`${uploadStats.failed} 个文件上传失败`}
+                                    type="error"
+                                    showIcon
+                                    style={{ marginTop: 16 }}
+                                />
+                                
+                                <Collapse
+                                    style={{ marginTop: 8 }}
+                                    items={[
+                                        {
+                                            key: 'failed-files',
+                                            label: (
+                                                <span>
+                                                    <ExclamationCircleOutlined style={{ color: '#ff4d4f', marginRight: 8 }} />
+                                                    查看失败文件详情 ({uploadStats.failed} 个)
+                                                </span>
+                                            ),
+                                            children: (
+                                                <List
+                                                    size="small"
+                                                    dataSource={failedFilesRef.current}
+                                                    renderItem={(item) => (
+                                                        <List.Item
+                                                            style={{ 
+                                                                padding: '8px 0',
+                                                                borderBottom: '1px solid #f0f0f0'
+                                                            }}
+                                                        >
+                                                            <List.Item.Meta
+                                                                title={
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                        <Typography.Text strong style={{ color: '#ff4d4f' }}>
+                                                                            {item.name}
+                                                                        </Typography.Text>
+                                                                        <Tag color="orange" size="small">
+                                                                            {item.folderPath}
+                                                                        </Tag>
+                                                                        <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+                                                                            {(item.size / 1024 / 1024).toFixed(2)} MB
+                                                                        </Typography.Text>
+                                                                    </div>
+                                                                }
+                                                                description={
+                                                                    <div>
+                                                                        <div style={{ color: '#ff4d4f', marginBottom: 4 }}>
+                                                                            <ExclamationCircleOutlined style={{ marginRight: 4 }} />
+                                                                            错误原因: {item.error}
+                                                                        </div>
+                                                                        <div style={{ color: '#666', fontSize: '12px' }}>
+                                                                            <ClockCircleOutlined style={{ marginRight: 4 }} />
+                                                                            失败时间: {item.failedAt}
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                            />
+                                                            <div>
+                                                                <Button
+                                                                    size="small"
+                                                                    type="primary"
+                                                                    onClick={() => {
+                                                                        // 重试单个文件
+                                                                        const retryItem = { ...item, status: 'queued' };
+                                                                        delete retryItem.error;
+                                                                        delete retryItem.failedAt;
+                                                                        
+                                                                        // 从失败列表中移除
+                                                                        const index = failedFilesRef.current.findIndex(f => f.uid === item.uid);
+                                                                        if (index > -1) {
+                                                                            failedFilesRef.current.splice(index, 1);
+                                                                        }
+                                                                        
+                                                                        // 添加到上传队列
+                                                                        uploadQueueRef.current.push(retryItem);
+                                                                        updateStats();
+                                                                        processUploadQueue();
+                                                                        
+                                                                        message.info(`开始重试上传: ${item.name}`);
+                                                                    }}
+                                                                >
+                                                                    重试
+                                                                </Button>
+                                                            </div>
+                                                        </List.Item>
+                                                    )}
+                                                    locale={{
+                                                        emptyText: '暂无失败文件'
+                                                    }}
+                                                />
+                                            )
+                                        }
+                                    ]}
+                                />
+                            </>
                         )}
                     </>
                 )}

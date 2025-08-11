@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   LogoutOutlined,
   BookOutlined,
+  CloudSyncOutlined,
 } from '@ant-design/icons';
 import axios from './util/axios';
 import Login from './pages/Login';
@@ -19,6 +20,7 @@ import FileDetail from './pages/FileDetail';
 import UserManage from './pages/UserManage';
 import Settings from './pages/Settings';
 import Dictionary from './pages/Dictionary';
+import RemoteSync from './pages/RemoteSync';
 import logo from './assets/logo.png'; // 假设 logo 图片在 src/assets/logo.png
 
 const { Header, Sider, Content } = Layout;
@@ -73,6 +75,7 @@ const App = () => {
     { key: '/', icon: <BarChartOutlined />, label: '概览', permission: 'overview' },
     { key: '/upload', icon: <CloudUploadOutlined />, label: '上传', permission: 'upload' },
     { key: '/data', icon: <DatabaseOutlined />, label: '数据', permission: 'data' },
+    { key: '/remote-sync', icon: <CloudSyncOutlined />, label: '远程同步', permission: 'data' },
     { key: '/dictionary', icon: <BookOutlined />, label: '字典', permission: 'data' },
     { key: '/users', icon: <UserOutlined />, label: '用户', permission: 'users' },
     { key: '/settings', icon: <SettingOutlined />, label: '设置', permission: 'settings' },
@@ -126,6 +129,7 @@ const App = () => {
                     <Route path="/upload" element={<Upload />} />
                     <Route path="/data" element={<DataList />} />
                     <Route path="/data/:id" element={<FileDetail />} />
+                    <Route path="/remote-sync" element={<RemoteSync />} />
                     <Route path="/dictionary" element={<Dictionary />} />
                     <Route path="/users" element={<UserManage />} />
                     <Route path="/settings" element={<Settings />} />

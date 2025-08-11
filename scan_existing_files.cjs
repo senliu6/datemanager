@@ -1,73 +1,115 @@
+#!/usr/bin/env node
+
+// ===========================================
+// 数据管理平台 - 现有文件扫描脚本
+// 功能：扫描上传目录并注册到数据库
+// ===========================================
+
 const fs = require('fs');
 const path = require('path');
+
+// 加载文件模型
 const File = require('./server/models/file');
 
-async function scanAndImportFiles() {
-  try {
-    console.log('开始扫描文件...');
+// 配置参数
+const UPLOADS_DIR = '/app/Uploads';
 
-    const uploadsDir = path.join(__dirname, 'Uploads');
+// 扫描目录并注册文件
+async function scanAndRegisterFiles() {
+    console.log('🔍 开始扫描上传目录:', UPLOADS_DIR);
     
-    if (!fs.existsSync(uploadsDir)) {
-      console.error('Uploads 目录不存在');
-      return;
+    if (!fs.existsSync(UPLOADS_DIR)) {
+        console.error('❌ 上传目录不存在:', UPLOADS_DIR);
+        process.exit(1);
     }
-
-    const files = fs.readdirSync(uploadsDir);
-    console.log(`发现 ${files.length} 个文件`);
-
-    let importedCount = 0;
-    let skippedCount = 0;
-
-    for (const fileName of files) {
-      const filePath = path.join(uploadsDir, fileName);
-      const stats = fs.statSync(filePath);
-      
-      // 跳过目录
-      if (stats.isDirectory()) {
-        console.log(`跳过目录: ${fileName}`);
-        skippedCount++;
-        continue;
-      }
-
-      // 检查文件是否已存在于数据库中
-      const existingFile = await File.findByFileName(fileName);
-      if (existingFile) {
-        console.log(`文件已存在于数据库: ${fileName}`);
-        skippedCount++;
-        continue;
-      }
-
-      try {
-        // 创建文件记录
-        const fileData = await File.create({
-          fileName: fileName,
-          originalName: fileName, // 对于现有文件，原始名称就是文件名
-          size: stats.size,
-          duration: '未知',
-          path: filePath,
-          uploader: 'system',
-          tags: [],
-          chunked: false,
-          folderPath: '未分类'
-        });
-
-        console.log(`✅ 导入文件: ${fileName} (${(stats.size / (1024 * 1024)).toFixed(2)} MB)`);
-        importedCount++;
-      } catch (error) {
-        console.error(`❌ 导入文件失败: ${fileName}`, error.message);
-        skippedCount++;
-      }
-    }
-
-    console.log('\n导入完成:');
-    console.log(`- 成功导入: ${importedCount} 个文件`);
-    console.log(`- 跳过: ${skippedCount} 个文件`);
     
-  } catch (error) {
-    console.error('扫描导入失败:', error);
-  }
+    let totalFiles = 0;
+    let registeredFiles = 0;
+    let skippedFiles = 0;
+    let errorFiles = 0;
+    
+    // 递归扫描目录
+    async function scanDirectory(dirPath, relativePath = '') {
+        const items = fs.readdirSync(dirPath);
+        
+        for (const item of items) {
+            const fullPath = path.join(dirPath, item);
+            const stats = fs.statSync(fullPath);
+            
+            if (stats.isDirectory()) {
+                // 递归扫描子目录
+                const newRelativePath = relativePath ? path.join(relativePath, item) : item;
+                await scanDirectory(fullPath, newRelativePath);
+            } else if (stats.isFile()) {
+                totalFiles++;
+                
+                try {
+                    // 检查文件是否已经在数据库中
+                    const existingFiles = await File.findByOriginalName(item);
+                    const existingFile = existingFiles.find(f => f.path === fullPath);
+                    
+                    if (existingFile) {
+                        console.log(`⏭️  跳过已存在的文件: ${item}`);
+                        skippedFiles++;
+                        continue;
+                    }
+                    
+                    // 生成唯一的文件名
+                    const timestamp = Date.now();
+                    const randomNum = Math.floor(Math.random() * 1000000000);
+                    const ext = path.extname(item);
+                    const fileName = `${timestamp}-${randomNum}${ext}`;
+                    
+                    // 确定文件夹路径
+                    let folderPath = relativePath || '未分类';
+                    
+                    // 创建文件记录
+                    const fileData = await File.create({
+                        fileName: fileName,
+                        originalName: item,
+                        size: stats.size,
+                        duration: '未知',
+                        path: fullPath,
+                        uploader: 'upload_user',
+                        tags: [],
+                        chunked: false,
+                        folderPath: folderPath
+                    });
+                    
+                    console.log(`✅ 注册成功: ${item} (ID: ${fileData.id}, 大小: ${(stats.size / 1024 / 1024).toFixed(2)}MB)`);
+                    registeredFiles++;
+                    
+                } catch (error) {
+                    console.error(`❌ 注册失败: ${item} - ${error.message}`);
+                    errorFiles++;
+                }
+            }
+        }
+    }
+    
+    try {
+        await scanDirectory(UPLOADS_DIR);
+        
+        console.log('\n📊 扫描完成统计:');
+        console.log(`   总文件数: ${totalFiles}`);
+        console.log(`   新注册: ${registeredFiles}`);
+        console.log(`   已存在: ${skippedFiles}`);
+        console.log(`   失败: ${errorFiles}`);
+        
+        if (registeredFiles > 0) {
+            console.log('\n🎉 文件注册完成！现在可以在数据管理平台的Web界面中查看这些文件。');
+        } else {
+            console.log('\n💡 没有新文件需要注册。');
+        }
+        
+    } catch (error) {
+        console.error('❌ 扫描过程出错:', error);
+        process.exit(1);
+    }
 }
 
-// 运行扫描
-scanAndImportFiles();
+// 执行扫描
+scanAndRegisterFiles().catch(error => {
+    console.error('❌ 程序执行出错:', error);
+    process.exit(1);
+});

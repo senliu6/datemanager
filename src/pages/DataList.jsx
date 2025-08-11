@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {Button, Card, Form, Input, message, Modal, Row, Col, Select, Space, Table, Tag, Tooltip} from 'antd';
-import {CheckCircleOutlined, SyncOutlined, DownloadOutlined} from '@ant-design/icons';
+import {CheckCircleOutlined, SyncOutlined, DownloadOutlined, CloudSyncOutlined} from '@ant-design/icons';
 import {useNavigate} from 'react-router-dom';
 import axios from '../util/axios';
 import LeRobotEpisodeCard from '../components/LeRobotEpisodeCard';
@@ -833,6 +833,13 @@ const DataList = () => {
                                 <Button style={{marginLeft: 16}} type="primary" danger icon={<DownloadOutlined/>}
                                         onClick={handleDownload}>
                                     下载
+                                </Button>
+                                <Button 
+                                    style={{marginLeft: 8}}
+                                    icon={<CloudSyncOutlined />}
+                                    onClick={() => navigate('/remote-sync')}
+                                >
+                                    远程同步
                                 </Button>
                                 <Button style={{marginLeft: 16}} danger onClick={handleClearDatabase}>
                                     清除数据库
