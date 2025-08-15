@@ -416,11 +416,20 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
 
     console.log(`准备删除文件: ${file.originalName}, 路径: ${file.path}`);
 
-    // 删除本地文件
+    // 安全删除本地文件 - 检查是否有其他引用
     try {
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-        console.log(`本地文件删除成功: ${file.path}`);
+      const { safeDeleteFile } = require('../utils/fileDeduplication');
+      const File = require('../models/file');
+      
+      const checkReferences = async (filePath) => {
+        return await File.countByPath(filePath);
+      };
+      
+      const deleted = await safeDeleteFile(file.path, checkReferences);
+      if (deleted) {
+        console.log(`本地文件安全删除成功: ${file.path}`);
+      } else {
+        console.warn(`本地文件删除跳过或失败: ${file.path}`);
       }
     } catch (error) {
       console.warn(`删除本地文件失败: ${error.message}`);

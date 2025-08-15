@@ -487,4 +487,6 @@ router.delete('/clear-all', authenticateToken, checkPermission('data'), async (r
   }
 });
 
+// 导出路由和清除缓存函数
 module.exports = router;
+module.exports.clearCache = clearCache;

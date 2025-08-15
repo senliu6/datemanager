@@ -12,9 +12,14 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
     const folderPath = req.params.id;
     const uploadDir = path.join(__dirname, '../../Uploads');
 
-    // 查询与 folderPath 关联的所有文件
+    // 查询与 folderPath 关联的所有文件 - 精确匹配避免误删
     const allFiles = await File.findAll();
-    const files = allFiles.filter(file => file.folderPath.startsWith(folderPath));
+    const files = allFiles.filter(file => {
+      // 精确匹配文件夹路径，避免删除其他相似路径的文件夹
+      return file.folderPath === folderPath || 
+             file.folderPath.startsWith(folderPath + '/') ||
+             file.folderPath.startsWith(folderPath + '\\');
+    });
 
     console.log('Matched files for folderPath:', files);
 
@@ -26,17 +31,30 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
       });
     }
 
-    // 删除文件系统中的文件
-    files.forEach(file => {
-      const filePath = path.join(uploadDir, path.basename(file.path));
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log('Deleted file:', filePath);
+    // 安全删除文件系统中的文件 - 检查引用计数
+    const { safeDeleteFile } = require('../utils/fileDeduplication');
+    
+    const checkReferences = async (filePath) => {
+      return await File.countByPath(filePath);
+    };
+    
+    for (const file of files) {
+      try {
+        const deleted = await safeDeleteFile(file.path, checkReferences);
+        if (deleted) {
+          console.log('安全删除文件成功:', file.path);
+        } else {
+          console.warn('文件删除跳过或失败:', file.path);
+        }
+      } catch (error) {
+        console.error('删除文件失败:', file.path, error);
       }
-    });
+    }
 
-    // 删除数据库记录
-    await File.deleteMany({ folderPath: { $like: `${folderPath}%` } });
+    // 删除数据库记录 - 只删除匹配的文件，避免误删
+    for (const file of files) {
+      await File.delete(file.id);
+    }
 
     res.json({
       success: true,

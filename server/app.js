@@ -73,6 +73,7 @@ const File = require('./models/file');
 const { authenticateToken, checkPermission } = require('./middleware/auth');
 const { logAction } = require('./models/auditLog');
 const { getVideoDuration } = require('./utils/videoUtils');
+const { calculateFileHash, generateUniqueFileName } = require('./utils/fileDeduplication');
 
 
 app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res, next) => {
@@ -116,7 +117,8 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
         require('fs').mkdirSync(uploadsDir, { recursive: true });
       }
 
-      const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000000000)}${path.extname(file.originalname)}`;
+      // 生成唯一的文件名，使用新的去重工具
+      const fileName = generateUniqueFileName(file.originalname, folderPath);
       const filePath = path.join(uploadsDir, fileName);
 
       // 使用流式写入处理大文件
@@ -132,6 +134,15 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
           }
         });
       });
+
+      // 计算文件哈希值用于去重
+      let fileHash = null;
+      try {
+        fileHash = await calculateFileHash(filePath);
+        console.log(`文件哈希计算完成: ${fileHash}`);
+      } catch (hashError) {
+        console.warn('计算文件哈希失败:', hashError);
+      }
 
       // 获取视频时长（仅对视频文件，跳过zip文件）
       let duration = '未知';
@@ -152,7 +163,8 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
         uploader: req.user.username || 'admin',
         tags: [],
         chunked: false,
-        folderPath: folderPath
+        folderPath: folderPath,
+        md5: fileHash
       });
 
       // 记录上传操作
@@ -254,7 +266,7 @@ app.post('/api/download/batch', authenticateToken, checkPermission('data'), asyn
 // 添加清除数据库的直接路由
 app.delete('/api/clear-database', authenticateToken, checkPermission('data'), async (req, res) => {
   try {
-    console.log('开始清除数据库...');
+    console.log('开始清除数据库和缓存...');
     const files = await File.findAll();
 
     // 删除本地文件
@@ -269,6 +281,67 @@ app.delete('/api/clear-database', authenticateToken, checkPermission('data'), as
       }
     }
 
+    // 清除临时文件和缓存目录
+    const cleanupDirectories = [
+      path.join(__dirname, '../Uploads/temp'),  // 分块上传临时目录
+      path.join(__dirname, '../temp'),          // 合并文件临时目录
+      path.join(__dirname, '../server/cache'),  // 服务器缓存目录
+      path.join(__dirname, '../dist'),          // 构建缓存目录
+      path.join(__dirname, '../.vite'),         // Vite 缓存目录
+      path.join(__dirname, '../node_modules/.vite'), // Vite 模块缓存
+    ];
+
+    let cleanedDirs = 0;
+    let cleanedFiles = 0;
+
+    for (const dir of cleanupDirectories) {
+      try {
+        if (require('fs').existsSync(dir)) {
+          const stats = require('fs').statSync(dir);
+          if (stats.isDirectory()) {
+            // 计算目录中的文件数量
+            const countFiles = (dirPath) => {
+              let count = 0;
+              try {
+                const items = require('fs').readdirSync(dirPath);
+                for (const item of items) {
+                  const itemPath = path.join(dirPath, item);
+                  const itemStats = require('fs').statSync(itemPath);
+                  if (itemStats.isDirectory()) {
+                    count += countFiles(itemPath);
+                  } else {
+                    count++;
+                  }
+                }
+              } catch (error) {
+                console.warn(`计算文件数量失败: ${dirPath}`, error);
+              }
+              return count;
+            };
+
+            const fileCount = countFiles(dir);
+            require('fs').rmSync(dir, { recursive: true, force: true });
+            console.log(`✅ 清除缓存目录: ${dir} (${fileCount} 个文件)`);
+            cleanedDirs++;
+            cleanedFiles += fileCount;
+          }
+        }
+      } catch (error) {
+        console.warn(`清除缓存目录失败: ${dir}`, error);
+      }
+    }
+
+    // 清除字典缓存
+    try {
+      const dictionaryRouter = require('./routes/dictionary');
+      if (dictionaryRouter && typeof dictionaryRouter.clearCache === 'function') {
+        dictionaryRouter.clearCache();
+        console.log('✅ 字典缓存已清除');
+      }
+    } catch (error) {
+      console.warn('清除字典缓存失败:', error);
+    }
+
     // 清空数据库
     await File.deleteAll();
 
@@ -277,18 +350,20 @@ app.delete('/api/clear-database', authenticateToken, checkPermission('data'), as
       userId: req.user.id,
       username: req.user.username,
       action: 'clear_database',
-      details: `清除所有数据库记录和本地文件，共 ${files.length} 个文件`,
+      details: `清除所有数据库记录、本地文件和缓存，共 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件，${cleanedDirs} 个缓存目录`,
       ipAddress: req.ip,
     });
 
-    console.log(`清除完成 - 删除了 ${files.length} 个文件`);
+    console.log(`清除完成 - 删除了 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件，${cleanedDirs} 个缓存目录`);
 
     res.json({
       success: true,
-      message: `数据库和本地文件已清除，共删除 ${files.length} 个文件`,
+      message: `数据库、本地文件和缓存已清除，共删除 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件`,
       data: {
         deletedCount: files.length,
-        totalFiles: files.length
+        totalFiles: files.length,
+        cleanedCacheFiles: cleanedFiles,
+        cleanedCacheDirs: cleanedDirs
       }
     });
   } catch (error) {
@@ -568,11 +643,11 @@ app.post('/api/check-file', authenticateToken, checkPermission('upload'), async 
       });
     }
 
-    // 查找相同文件名、大小和文件夹路径的文件
+    // 查找相同文件名、大小和文件夹路径的文件 - 精确匹配避免跨文件夹冲突
     const existingFiles = await File.findByOriginalName(fileName);
     
     for (const file of existingFiles) {
-      // 检查文件名、大小和文件夹路径是否完全匹配
+      // 检查文件名、大小和文件夹路径是否完全匹配（必须在同一文件夹）
       if (file.originalName === fileName && 
           file.size === fileSize && 
           file.folderPath === (folderPath || '未分类')) {

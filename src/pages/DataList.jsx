@@ -273,7 +273,7 @@ const DataList = () => {
             onOk: async () => {
                 try {
                     setLoading(true);
-                    const response = await axios.delete('/api/clear-database', {
+                    const response = await axios.delete('/api/stats/clear-database', {
                         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
                     });
                     if (response.data.success) {

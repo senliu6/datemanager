@@ -151,23 +151,111 @@ router.post('/update-durations', authenticateToken, checkPermission('overview'),
   }
 });
 
-// 清除数据库
+// 清除数据库和缓存
 router.delete('/clear-database', authenticateToken, checkPermission('data'), async (req, res) => {
   try {
-    console.log('开始清除数据库...');
+    console.log('开始清除数据库和缓存...');
     const files = await File.findAll();
-    
+    const path = require('path');
+    const fs = require('fs');
+
+    // 删除本地文件
+    for (const file of files) {
+      try {
+        console.log(`正在删除本地文件: ${file.path}`);
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      } catch (error) {
+        console.error(`删除本地文件异常: ${file.path}`, error);
+      }
+    }
+
+    // 清除临时文件和缓存目录
+    const cleanupDirectories = [
+      path.join(__dirname, '../../Uploads/temp'),  // 分块上传临时目录
+      path.join(__dirname, '../../temp'),          // 合并文件临时目录
+      path.join(__dirname, '../cache'),            // 服务器缓存目录
+      path.join(__dirname, '../../dist'),          // 构建缓存目录
+      path.join(__dirname, '../../.vite'),         // Vite 缓存目录
+      path.join(__dirname, '../../node_modules/.vite'), // Vite 模块缓存
+      path.join(__dirname, '../../node_modules/.vite-temp'), // Vite 临时缓存
+    ];
+
+    let cleanedDirs = 0;
+    let cleanedFiles = 0;
+
+    for (const dir of cleanupDirectories) {
+      try {
+        if (fs.existsSync(dir)) {
+          const stats = fs.statSync(dir);
+          if (stats.isDirectory()) {
+            // 计算目录中的文件数量
+            const countFiles = (dirPath) => {
+              let count = 0;
+              try {
+                const items = fs.readdirSync(dirPath);
+                for (const item of items) {
+                  const itemPath = path.join(dirPath, item);
+                  const itemStats = fs.statSync(itemPath);
+                  if (itemStats.isDirectory()) {
+                    count += countFiles(itemPath);
+                  } else {
+                    count++;
+                  }
+                }
+              } catch (error) {
+                console.warn(`计算文件数量失败: ${dirPath}`, error);
+              }
+              return count;
+            };
+
+            const fileCount = countFiles(dir);
+            fs.rmSync(dir, { recursive: true, force: true });
+            console.log(`✅ 清除缓存目录: ${dir} (${fileCount} 个文件)`);
+            cleanedDirs++;
+            cleanedFiles += fileCount;
+          }
+        }
+      } catch (error) {
+        console.warn(`清除缓存目录失败: ${dir}`, error);
+      }
+    }
+
+    // 清除字典缓存
+    try {
+      const dictionaryRouter = require('./dictionary');
+      if (dictionaryRouter && typeof dictionaryRouter.clearCache === 'function') {
+        dictionaryRouter.clearCache();
+        console.log('✅ 字典缓存已清除');
+      }
+    } catch (error) {
+      console.warn('清除字典缓存失败:', error);
+    }
+
     // 清除数据库记录
     await File.deleteAll();
+
+    // 记录清除操作
+    const { logAction } = require('../models/auditLog');
+    await logAction({
+      userId: req.user.id,
+      username: req.user.username,
+      action: 'clear_database',
+      details: `清除所有数据库记录、本地文件和缓存，共 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件，${cleanedDirs} 个缓存目录`,
+      ipAddress: req.ip,
+    });
     
-    console.log(`清除完成 - 删除了 ${files.length} 条记录`);
+    console.log(`清除完成 - 删除了 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件，${cleanedDirs} 个缓存目录`);
     
     res.json({
       success: true,
-      message: `数据库已清除，删除了 ${files.length} 条记录`,
+      message: `数据库、本地文件和缓存已清除，共删除 ${files.length} 个数据库文件，${cleanedFiles} 个缓存文件`,
       data: {
         deletedCount: files.length,
-        totalFiles: files.length
+        totalFiles: files.length,
+        cleanedCacheFiles: cleanedFiles,
+        cleanedCacheDirs: cleanedDirs
       }
     });
   } catch (error) {

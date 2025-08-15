@@ -166,6 +166,40 @@ const File = {
     });
   },
 
+  findByHash: (md5Hash) => {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM files WHERE md5 = ? LIMIT 1';
+      db.get(sql, [md5Hash], (err, row) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (!row) {
+          resolve(null);
+          return;
+        }
+        const file = {
+          ...row,
+          tags: JSON.parse(row.tags)
+        };
+        resolve(file);
+      });
+    });
+  },
+
+  countByPath: (filePath) => {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT COUNT(*) as count FROM files WHERE path = ?';
+      db.get(sql, [filePath], (err, row) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(row.count);
+      });
+    });
+  },
+
   getFileContent: (id) => {
     return new Promise((resolve, reject) => {
       const sql = 'SELECT path, originalName FROM files WHERE id = ?';
