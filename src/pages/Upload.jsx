@@ -478,7 +478,7 @@ const UploadPage = () => {
                 description: (
                     <div>
                         <div>✅ 已处理文件夹: data, meta, videos</div>
-                        <div>{imagesEntry ? '📦 images文件夹已压缩为 images.zip' : '❌ 未发现images文件夹'}</div>
+                        <div>{imagesEntry ? '📦 images文件夹已压缩为 images.zip' : ''}</div>
                         <div>📊 总计处理: {totalProcessed} 个文件</div>
                     </div>
                 ),

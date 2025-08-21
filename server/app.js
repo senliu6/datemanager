@@ -1,6 +1,5 @@
-// 加载环境变量
-const envPath = process.env.NODE_ENV === 'production' ? '../.env.docker' : '../.env.local';
-require('dotenv').config({ path: envPath });
+// 加载配置
+const config = require('./config/environment');
 
 const express = require('express');
 const path = require('path');
@@ -25,10 +24,7 @@ app.use(express.json({ limit: '12gb' })); // 增加到12GB支持超大文件
 app.use(express.urlencoded({ limit: '12gb', extended: true }));
 
 // 静态文件服务
-const uploadsPath = process.env.NODE_ENV === 'production'
-  ? '/app/Uploads'
-  : '/home/sen/gitee/datemanager/Uploads';
-app.use('/Uploads', express.static(uploadsPath));
+app.use('/Uploads', express.static(config.UPLOADS_PATH));
 app.use('/datasets', express.static(path.join(__dirname, '../datasets')));
 
 // 数据库连接和初始化
@@ -110,9 +106,7 @@ app.post('/api/upload', authenticateToken, checkPermission('upload'), (req, res,
       console.log(`开始上传文件: ${file.originalname}, 大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
       // 保存文件到本地
-      const uploadsDir = process.env.NODE_ENV === 'production'
-        ? '/app/Uploads'
-        : path.join(__dirname, '../Uploads');
+      const uploadsDir = config.UPLOADS_PATH;
       if (!require('fs').existsSync(uploadsDir)) {
         require('fs').mkdirSync(uploadsDir, { recursive: true });
       }
@@ -474,7 +468,7 @@ const authenticateTokenFlexible = (req, res, next) => {
   // 验证token的逻辑（复制自原authenticateToken中间件）
   const jwt = require('jsonwebtoken');
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, config.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
@@ -617,7 +611,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({
     success: false,
     message: '服务器内部错误',
-    error: process.env.NODE_ENV === 'development' ? err.message : '服务器错误'
+    error: config.isDevelopment ? err.message : '服务器错误'
   });
 });
 
@@ -691,14 +685,62 @@ app.use('*', (req, res) => {
 
 // 如果直接运行此文件，启动服务器
 if (require.main === module) {
-  const PORT = process.env.PORT || 3001;
-  const HOST = process.env.HOST || '0.0.0.0';
+  if (config.ENABLE_HTTPS) {
+    // HTTPS 服务器
+    const https = require('https');
+    const fs = require('fs');
+    
+    try {
+      // 读取 SSL 证书
+      const sslOptions = {
+        key: fs.readFileSync(config.SSL_KEY_PATH),
+        cert: fs.readFileSync(config.SSL_CERT_PATH)
+      };
 
-  app.listen(PORT, HOST, () => {
-    console.log(`服务器运行在 ${HOST}:${PORT}`);
-    console.log(`本地访问: http://localhost:${PORT}`);
-    console.log(`网络访问: http://10.30.30.94:${PORT}`);
-  });
+      // 启动 HTTPS 服务器
+      https.createServer(sslOptions, app).listen(config.HTTPS_PORT, config.HOST, () => {
+        console.log(`🔒 HTTPS 服务器运行在 ${config.HOST}:${config.HTTPS_PORT}`);
+        console.log(`🔒 本地访问: https://localhost:${config.HTTPS_PORT}`);
+        console.log(`🔒 网络访问: https://${config.HOST}:${config.HTTPS_PORT}`);
+      });
+
+      // 可选：同时启动 HTTP 服务器用于重定向到 HTTPS
+      if (config.HTTP_REDIRECT) {
+        const http = require('http');
+        const redirectApp = require('express')();
+        
+        redirectApp.use('*', (req, res) => {
+          const httpsUrl = `https://${req.get('host').replace(/:\d+$/, `:${config.HTTPS_PORT}`)}${req.originalUrl}`;
+          console.log(`🔄 HTTP 重定向: ${req.originalUrl} -> ${httpsUrl}`);
+          res.redirect(301, httpsUrl);
+        });
+        
+        http.createServer(redirectApp).listen(config.PORT, config.HOST, () => {
+          console.log(`🔄 HTTP 重定向服务器运行在 ${config.HOST}:${config.PORT} -> HTTPS:${config.HTTPS_PORT}`);
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ HTTPS 启动失败:', error.message);
+      console.log('💡 提示: 请确保 SSL 证书文件存在，或运行生成证书脚本');
+      console.log('🔧 回退到 HTTP 模式...');
+      
+      // 回退到 HTTP
+      app.listen(config.PORT, config.HOST, () => {
+        console.log(`⚠️  HTTP 服务器运行在 ${config.HOST}:${config.PORT} (HTTPS 启动失败)`);
+        console.log(`⚠️  本地访问: http://localhost:${config.PORT}`);
+        console.log(`⚠️  网络访问: http://${config.HOST}:${config.PORT}`);
+      });
+    }
+  } else {
+    // HTTP 服务器
+    app.listen(config.PORT, config.HOST, () => {
+      console.log(`🌐 HTTP 服务器运行在 ${config.HOST}:${config.PORT}`);
+      console.log(`🌐 本地访问: http://localhost:${config.PORT}`);
+      console.log(`🌐 网络访问: http://${config.HOST}:${config.PORT}`);
+      console.log(`💡 提示: 设置 ENABLE_HTTPS=true 启用 HTTPS`);
+    });
+  }
 }
 
 module.exports = app;

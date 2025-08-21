@@ -1,8 +1,11 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-// 根据环境变量或默认路径设置数据库路径
-const dbPath = process.env.DB_PATH || path.resolve(__dirname, '../data/datemanager.db');
+// 加载配置
+const config = require('./environment');
+
+// 根据配置设置数据库路径
+const dbPath = path.resolve(config.DB_PATH);
 
 // 确保数据库目录存在
 const fs = require('fs');

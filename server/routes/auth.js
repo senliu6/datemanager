@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/userManage');
 const { logAction } = require('../models/auditLog');
 const { authenticateToken } = require('../middleware/auth');
+const config = require('../config/environment');
 
 const router = express.Router();
 
@@ -11,21 +12,21 @@ router.post('/login', async (req, res) => {
   try {
     const { username, password, remember } = req.body;
     
-    // 简化认证：支持内置的上传用户
-    if (process.env.SIMPLE_AUTH_ENABLED === 'true' && 
-        username === (process.env.UPLOAD_USER || 'upload') && 
-        password === (process.env.UPLOAD_PASS || 'upload123')) {
+    // 简化认证：支持内置的管理员用户
+    if (config.SIMPLE_AUTH_ENABLED && 
+        username === config.UPLOAD_USER && 
+        password === config.UPLOAD_PASS) {
       
       const simpleUser = {
-        id: 'upload',
-        username: 'upload',
-        role: 'uploader',
-        permissions: ['upload', 'data']
+        id: 'admin',
+        username: 'admin',
+        role: 'admin',
+        permissions: ['upload', 'data', 'overview', 'users', 'settings', 'admin']
       };
       
       const token = jwt.sign(
         simpleUser,
-        process.env.JWT_SECRET || 'your-secret-key',
+        config.JWT_SECRET,
         { expiresIn: remember ? '7d' : '1h' }
       );
       
@@ -60,7 +61,7 @@ router.post('/login', async (req, res) => {
     }
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, permissions: user.permissions },
-      process.env.JWT_SECRET || 'your-secret-key',
+      config.JWT_SECRET,
       { expiresIn: remember ? '7d' : '1h' }
     );
     // 记录登录操作

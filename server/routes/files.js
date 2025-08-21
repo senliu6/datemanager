@@ -7,6 +7,7 @@ const { authenticateToken, checkPermission } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { logAction } = require('../models/auditLog');
 const { getVideoDuration } = require('../utils/videoUtils');
+const config = require('../config/environment');
 
 
 const router = express.Router();
@@ -26,9 +27,7 @@ router.post('/upload', authenticateToken, checkPermission('upload'), upload.arra
       console.log(`开始上传文件: ${file.originalname}, 大小: ${file.size} bytes`);
       
       // 保存文件到本地
-      const uploadsDir = process.env.NODE_ENV === 'production' 
-        ? '/app/Uploads' 
-        : path.join(__dirname, '../../Uploads');
+      const uploadsDir = config.UPLOADS_PATH;
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
@@ -443,6 +442,33 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
         success: false,
         message: '删除文件失败'
       });
+    }
+
+    // 检查是否需要清理缓存
+    try {
+      // 检查同一文件夹下是否还有其他文件
+      const remainingFiles = await File.findAll();
+      const sameFolder = remainingFiles.filter(f => f.folderPath === file.folderPath);
+      
+      if (sameFolder.length === 0) {
+        // 如果这是文件夹中的最后一个文件，清理整个文件夹的缓存
+        console.log(`🧹 清理空文件夹的缓存: ${file.folderPath}`);
+        const { deleteCache } = require('../services/cacheService');
+        await deleteCache(file.folderPath);
+        console.log(`✅ 文件夹缓存清理完成: ${file.folderPath}`);
+      } else {
+        // 如果还有其他文件，只清理特定episode的缓存（如果是parquet文件）
+        if (file.originalName.endsWith('.parquet')) {
+          const episodeKey = file.originalName.replace('.parquet', '');
+          console.log(`🧹 清理单个episode缓存: ${episodeKey}`);
+          const { deleteEpisodeCache } = require('../services/cacheService');
+          await deleteEpisodeCache(file.folderPath, episodeKey);
+          console.log(`✅ 单个episode缓存清理完成: ${episodeKey}`);
+        }
+      }
+    } catch (cacheError) {
+      console.warn('清理缓存失败:', cacheError.message);
+      // 缓存清理失败不影响主要的删除操作
     }
 
     // 记录删除操作

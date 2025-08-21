@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>清理 localStorage</title>
+</head>
+<body>
+    <h1>清理 localStorage</h1>
+    <button onclick="clearStorage()">清理存储</button>
+    <div id="result"></div>
+    
+    <script>
+        function clearStorage() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            document.getElementById('result').innerHTML = '✅ localStorage 已清理';
+            console.log('localStorage 已清理');
+        }
+        
+        // 显示当前存储的内容
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            console.log('当前 token:', token);
+            console.log('当前 user:', user);
+        });
+    </script>
+</body>
+</html>

@@ -8,15 +8,23 @@ const fsp = fs.promises;
 const gzip = util.promisify(zlib.gzip);
 const gunzip = util.promisify(zlib.gunzip);
 
-// 缓存目录
-const CACHE_DIR = path.join(__dirname, '../cache');
+// 动态获取缓存目录
+const config = require('../config/environment');
+
+function getCacheDir() {
+  return config.CACHE_DIR;
+}
+
+const CACHE_DIR = getCacheDir();
 
 // 确保缓存目录存在
 async function ensureCacheDir() {
   try {
     await fsp.mkdir(CACHE_DIR, { recursive: true });
+    console.log(`📁 缓存目录已确保存在: ${CACHE_DIR}`);
   } catch (err) {
     console.error('创建缓存目录失败:', err.message);
+    throw err;
   }
 }
 
@@ -59,6 +67,9 @@ async function getListCache(folderPath) {
 // 写入列表缓存（只包含基本信息）
 async function setListCache(folderPath, episodes) {
   try {
+    // 确保缓存目录存在
+    await ensureCacheDir();
+    
     folderPath = normalizeFolderPath(folderPath);
     const cacheFile = getListCacheFilePath(folderPath);
     // 只缓存基本信息，不包含点云数据
@@ -98,6 +109,9 @@ async function getEpisodeCache(folderPath, episodeKey, quality = 'medium') {
 // 写入单个episode的完整缓存
 async function setEpisodeCache(folderPath, episode, quality = 'medium') {
   try {
+    // 确保缓存目录存在
+    await ensureCacheDir();
+    
     folderPath = normalizeFolderPath(folderPath);
     const cacheFile = getEpisodeCacheFilePath(folderPath, episode.key, quality);
     const data = Buffer.from(JSON.stringify(episode));
@@ -233,11 +247,55 @@ function hasEpisodeCache(folderPath, episodeKey, quality = 'medium') {
   return fs.existsSync(cacheFile);
 }
 
-// 初始化缓存目录
-ensureCacheDir();
+// 删除单个episode的缓存
+async function deleteEpisodeCache(folderPath, episodeKey, quality = null) {
+  try {
+    folderPath = normalizeFolderPath(folderPath);
+    console.log(`🧹 开始清理单个episode缓存: folderPath="${folderPath}", episodeKey="${episodeKey}", quality="${quality || 'all'}"`);
+    
+    let deletedCount = 0;
+    
+    if (quality) {
+      // 删除特定质量级别的缓存
+      const cacheFile = getEpisodeCacheFilePath(folderPath, episodeKey, quality);
+      if (fs.existsSync(cacheFile)) {
+        await fsp.unlink(cacheFile);
+        deletedCount++;
+        console.log(`✅ 已删除episode缓存 (${quality}):`, path.basename(cacheFile));
+      }
+    } else {
+      // 删除所有质量级别的缓存
+      const qualities = ['low', 'medium', 'high', 'full'];
+      for (const q of qualities) {
+        const cacheFile = getEpisodeCacheFilePath(folderPath, episodeKey, q);
+        if (fs.existsSync(cacheFile)) {
+          await fsp.unlink(cacheFile);
+          deletedCount++;
+          console.log(`✅ 已删除episode缓存 (${q}):`, path.basename(cacheFile));
+        }
+      }
+    }
+    
+    console.log(`🎉 单个episode缓存清理完成，共删除 ${deletedCount} 个文件`);
+    return deletedCount;
+  } catch (err) {
+    console.error('❌ 删除单个episode缓存失败:', err.message);
+    throw err;
+  }
+}
 
-// 初始化时清理旧缓存
-cleanupOldCache();
+// 初始化缓存目录和清理旧缓存
+async function initializeCache() {
+  try {
+    await ensureCacheDir();
+    await cleanupOldCache();
+  } catch (err) {
+    console.warn('缓存初始化失败:', err.message);
+  }
+}
+
+// 异步初始化
+initializeCache();
 
 module.exports = {
   getListCache,
@@ -246,6 +304,7 @@ module.exports = {
   setEpisodeCache,
   setEpisodeCacheBatch,
   deleteCache,
+  deleteEpisodeCache,
   hasEpisodeCache,
   cleanupOldCache
 };

@@ -1,27 +1,12 @@
-// API配置文件
+// API配置文件 - 简化版本
 const getApiBaseUrl = () => {
-  // 优先使用环境变量
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
-  
-  // 开发环境下使用代理
+  // 开发环境始终使用代理
   if (import.meta.env.DEV) {
     return '/api';
   }
   
-  // 生产环境下动态获取当前域名和端口
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  const port = window.location.port || (protocol === 'https:' ? '443' : '80');
-  
-  // 如果是通过3000端口访问（前端开发服务器），则API在3001端口
-  if (port === '3000') {
-    return `${protocol}//${hostname}:3001/api`;
-  }
-  
-  // 否则假设前后端在同一端口
-  return `${protocol}//${hostname}:${port}/api`;
+  // 生产环境使用相对路径
+  return '/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();

@@ -213,7 +213,7 @@ const Dashboard = () => {
             }
           >
             <Statistic
-              title="数据时长"
+              title="数据总时长"
               value={stats.totalDuration}
               prefix={<ClockCircleOutlined />}
             />

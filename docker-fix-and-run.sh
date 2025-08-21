@@ -15,63 +15,70 @@ fi
 
 # 获取IP地址
 get_docker_host_ip() {
-    local detected_ip=""
-    
     # 方法1: 从环境变量获取
     if [ -n "$DOCKER_HOST_IP" ]; then
-        detected_ip="$DOCKER_HOST_IP"
-        echo "使用环境变量 DOCKER_HOST_IP: $detected_ip"
+        echo "$DOCKER_HOST_IP"
         return 0
     fi
     
     # 方法2: 从现有的 .env.local 文件获取（如果存在且有效）
     if [ -f ".env.local" ]; then
-        local existing_ip=$(grep "VITE_API_BASE_URL" .env.local | sed 's/.*http:\/\/\([^:]*\):.*/\1/')
+        local existing_ip=$(grep "VITE_API_BASE_URL" .env.local | sed 's/.*http[s]*:\/\/\([^:]*\):.*/\1/')
         if [[ $existing_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$existing_ip" != "0.0.0.0" ]; then
-            detected_ip="$existing_ip"
-            echo "使用现有配置文件中的IP: $detected_ip"
+            echo "$existing_ip"
             return 0
         fi
     fi
     
     # 方法3: 通过网关获取宿主机IP
-    detected_ip=$(ip route | grep default | awk '{print $3}' | head -1)
-    if [[ $detected_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$detected_ip" != "0.0.0.0" ]; then
-        echo "通过默认网关检测到宿主机IP: $detected_ip"
+    local gateway_ip=$(ip route | grep default | awk '{print $3}' | head -1)
+    if [[ $gateway_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$gateway_ip" != "0.0.0.0" ]; then
+        echo "$gateway_ip"
         return 0
     fi
     
     # 方法4: 尝试从网络接口获取
-    detected_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
-    if [[ $detected_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$detected_ip" != "0.0.0.0" ]; then
-        echo "通过路由检测到IP: $detected_ip"
+    local route_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
+    if [[ $route_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$route_ip" != "0.0.0.0" ]; then
+        echo "$route_ip"
         return 0
     fi
     
     # 方法5: 使用容器内的网络接口（排除回环地址）
-    detected_ip=$(hostname -I | awk '{print $1}' | grep -v '^127\.' | head -1)
-    if [[ $detected_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$detected_ip" != "0.0.0.0" ]; then
-        echo "使用容器网络接口IP: $detected_ip"
+    local host_ip=$(hostname -I | awk '{print $1}' | grep -v '^127\.' | head -1)
+    if [[ $host_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] && [ "$host_ip" != "0.0.0.0" ]; then
+        echo "$host_ip"
         return 0
     fi
     
-    # 如果都失败了，提示用户手动设置
-    echo "❌ 无法自动检测到有效的IP地址"
-    echo "请使用以下方式之一："
-    echo "1. 设置环境变量: DOCKER_HOST_IP=你的宿主机IP ./docker-fix-and-run.sh"
-    echo "2. 手动运行: ./set-docker-ip.sh"
-    echo "3. 直接编辑 .env.local 文件"
-    exit 1
+    # 如果都失败了，返回空
+    echo ""
+    return 1
 }
 
 if [ "$IN_DOCKER" = true ]; then
-    get_docker_host_ip
-    LOCAL_IP="$detected_ip"
+    LOCAL_IP=$(get_docker_host_ip)
+    
+    if [ -n "$LOCAL_IP" ]; then
+        echo "🔍 Docker环境IP检测成功: $LOCAL_IP"
+    else
+        echo "⚠️ Docker环境IP检测失败，尝试备用方法..."
+        LOCAL_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}')
+        if [ -z "$LOCAL_IP" ]; then
+            LOCAL_IP=$(hostname -I | awk '{print $1}')
+        fi
+    fi
 else
     LOCAL_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}')
     if [ -z "$LOCAL_IP" ]; then
         LOCAL_IP=$(hostname -I | awk '{print $1}')
     fi
+fi
+
+# 确保LOCAL_IP不为空
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP="10.30.10.9"  # 使用默认IP
+    echo "⚠️ 无法检测IP，使用默认值: $LOCAL_IP"
 fi
 echo "📍 本机IP: $LOCAL_IP"
 
@@ -165,11 +172,147 @@ nohup node app.js > ../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
+# 检查是否启用 HTTPS
+ENABLE_HTTPS=${ENABLE_HTTPS:-false}
+HTTPS_PORT=${HTTPS_PORT:-3443}
+
+echo "🔒 HTTPS 配置: $ENABLE_HTTPS"
+
+if [ "$ENABLE_HTTPS" = "true" ]; then
+    # 检查 SSL 证书是否存在
+    SSL_DIR="./ssl"
+    if [ ! -f "$SSL_DIR/server.key" ] || [ ! -f "$SSL_DIR/server.crt" ]; then
+        echo "❌ SSL 证书不存在，正在生成..."
+        
+        # 创建 SSL 目录
+        mkdir -p "$SSL_DIR"
+        
+        # 创建 OpenSSL 配置文件
+        cat > "$SSL_DIR/openssl.conf" << SSLEOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+C=CN
+ST=Beijing
+L=Beijing
+O=DateManager
+OU=Development
+CN=localhost
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = *.localhost
+IP.1 = 127.0.0.1
+IP.2 = ::1
+IP.3 = $LOCAL_IP
+SSLEOF
+
+        # 生成 SSL 证书
+        if command -v openssl >/dev/null 2>&1; then
+            echo "🔑 生成 SSL 证书..."
+            openssl genrsa -out "$SSL_DIR/server.key" 2048
+            openssl req -new -key "$SSL_DIR/server.key" -out "$SSL_DIR/server.csr" -config "$SSL_DIR/openssl.conf"
+            openssl x509 -req -in "$SSL_DIR/server.csr" -signkey "$SSL_DIR/server.key" -out "$SSL_DIR/server.crt" -days 365 -extensions v3_req -extfile "$SSL_DIR/openssl.conf"
+            
+            # 设置文件权限
+            chmod 600 "$SSL_DIR/server.key"
+            chmod 644 "$SSL_DIR/server.crt"
+            
+            echo "✅ SSL 证书生成完成"
+        else
+            echo "❌ OpenSSL 未安装，无法生成证书"
+            echo "🔧 回退到 HTTP 模式"
+            ENABLE_HTTPS=false
+        fi
+    else
+        echo "✅ SSL 证书已存在"
+    fi
+fi
+
 # 创建环境配置
-cat > .env.local << EOF
-VITE_API_BASE_URL=http://$LOCAL_IP:3001/api
+if [ "$ENABLE_HTTPS" = "true" ]; then
+    echo "🔒 配置 HTTPS 环境..."
+    cat > .env.local << EOF
 NODE_ENV=development
+PORT=3001
+HTTPS_PORT=$HTTPS_PORT
+HOST=0.0.0.0
+
+# HTTPS 配置
+ENABLE_HTTPS=true
+HTTP_REDIRECT=true
+SSL_KEY_PATH=../ssl/server.key
+SSL_CERT_PATH=../ssl/server.crt
+
+# 访问配置
+FRONTEND_URL=https://$LOCAL_IP:$HTTPS_PORT
+API_BASE_URL=https://$LOCAL_IP:$HTTPS_PORT/api
+VITE_API_BASE_URL=https://$LOCAL_IP:$HTTPS_PORT/api
+
+# JWT密钥
+JWT_SECRET=simple-local-key
+
+# 数据库配置
+DB_PATH=./server/data/datemanager.db
+
+# 缓存配置
+CACHE_TYPE=memory
+CACHE_DIR=./cache
+
+# 文件上传配置
+MAX_FILE_SIZE=2GB
+UPLOAD_TEMP_DIR=/tmp/uploads
+
+# 认证配置
+SIMPLE_AUTH_ENABLED=true
+UPLOAD_USER=upload
+UPLOAD_PASS=upload123
 EOF
+else
+    echo "🌐 配置 HTTP 环境..."
+    cat > .env.local << EOF
+NODE_ENV=development
+PORT=3001
+HOST=0.0.0.0
+
+# HTTP 配置
+ENABLE_HTTPS=false
+
+# 访问配置
+FRONTEND_URL=http://$LOCAL_IP:3001
+API_BASE_URL=http://$LOCAL_IP:3001/api
+VITE_API_BASE_URL=http://$LOCAL_IP:3001/api
+
+# JWT密钥
+JWT_SECRET=simple-local-key
+
+# 数据库配置
+DB_PATH=./server/data/datemanager.db
+
+# 缓存配置
+CACHE_TYPE=memory
+CACHE_DIR=./cache
+
+# 文件上传配置
+MAX_FILE_SIZE=2GB
+UPLOAD_TEMP_DIR=/tmp/uploads
+
+# 认证配置
+SIMPLE_AUTH_ENABLED=true
+UPLOAD_USER=upload
+UPLOAD_PASS=upload123
+EOF
+fi
 
 # 等待后端启动
 echo "⏳ 等待后端启动..."
@@ -201,15 +344,34 @@ sleep 15
 echo ""
 echo "🔍 检查服务状态..."
 
-# 检查后端
-if curl -f http://localhost:3001/api/health >/dev/null 2>&1; then
-    echo "✅ 后端服务正常"
-elif curl -f http://localhost:3001 >/dev/null 2>&1; then
-    echo "✅ 后端服务正常（无健康检查端点）"
+# 检查后端服务
+if [ "$ENABLE_HTTPS" = "true" ]; then
+    # 检查 HTTPS 服务
+    if curl -k -f https://localhost:$HTTPS_PORT/api/health >/dev/null 2>&1; then
+        echo "✅ 后端 HTTPS 服务正常"
+    elif curl -k -f https://localhost:$HTTPS_PORT >/dev/null 2>&1; then
+        echo "✅ 后端 HTTPS 服务正常（无健康检查端点）"
+    else
+        echo "❌ 后端 HTTPS 服务异常"
+        echo "后端日志:"
+        tail -20 backend.log
+    fi
+    
+    # 检查 HTTP 重定向
+    if curl -f http://localhost:3001 >/dev/null 2>&1; then
+        echo "✅ HTTP 重定向服务正常"
+    fi
 else
-    echo "❌ 后端服务异常"
-    echo "后端日志:"
-    tail -20 backend.log
+    # 检查 HTTP 服务
+    if curl -f http://localhost:3001/api/health >/dev/null 2>&1; then
+        echo "✅ 后端 HTTP 服务正常"
+    elif curl -f http://localhost:3001 >/dev/null 2>&1; then
+        echo "✅ 后端 HTTP 服务正常（无健康检查端点）"
+    else
+        echo "❌ 后端 HTTP 服务异常"
+        echo "后端日志:"
+        tail -20 backend.log
+    fi
 fi
 
 # 检查前端
@@ -249,10 +411,30 @@ trap 'stop_services' INT TERM
 echo ""
 echo "🎉 部署完成! 按 Ctrl+C 终止服务"
 echo "================================"
-echo "🌐 访问地址:"
-echo "   前端: http://$LOCAL_IP:3000"
-echo "   后端: http://$LOCAL_IP:3001"
-echo "👤 登录: admin / admin123"
+
+if [ "$ENABLE_HTTPS" = "true" ]; then
+    echo "🔒 HTTPS 访问地址:"
+    echo "   前端: http://$LOCAL_IP:3000 (开发服务器)"
+    echo "   后端: https://$LOCAL_IP:$HTTPS_PORT"
+    echo "   API:  https://$LOCAL_IP:$HTTPS_PORT/api"
+    echo ""
+    echo "🔄 HTTP 重定向:"
+    echo "   http://$LOCAL_IP:3001 -> https://$LOCAL_IP:$HTTPS_PORT"
+    echo ""
+    echo "⚠️  浏览器安全警告:"
+    echo "   由于使用自签名证书，浏览器会显示安全警告"
+    echo "   请点击'高级' -> '继续访问' 来信任证书"
+else
+    echo "🌐 HTTP 访问地址:"
+    echo "   前端: http://$LOCAL_IP:3000"
+    echo "   后端: http://$LOCAL_IP:3001"
+    echo "   API:  http://$LOCAL_IP:3001/api"
+fi
+
+echo ""
+echo "👤 登录信息:"
+echo "   用户名: admin"
+echo "   密码: admin123"
 echo ""
 echo "📊 进程管理:"
 echo "   前端PID: $FRONTEND_PID"
@@ -262,6 +444,12 @@ echo "🔧 故障排除:"
 echo "   查看前端日志: tail -f frontend.log"
 echo "   查看后端日志: tail -f backend.log"
 echo "   检查进程: ps aux | grep -E 'node|vite'"
+
+if [ "$ENABLE_HTTPS" = "true" ]; then
+    echo "   检查证书: openssl x509 -in ssl/server.crt -text -noout"
+    echo "   测试 HTTPS: curl -k https://localhost:$HTTPS_PORT/api/health"
+fi
+
 echo ""
 
 # 实时查看日志

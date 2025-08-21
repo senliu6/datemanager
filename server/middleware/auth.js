@@ -41,7 +41,8 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ success: false, message: '未提供认证信息' });
   }
   
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+  const config = require('../config/environment');
+  jwt.verify(token, config.JWT_SECRET, (err, user) => {
     if (err) {
       console.log('JWT验证失败:', err.message);
       return res.status(403).json({ success: false, message: '无效的认证令牌' });

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const File = require('../models/file');
 const { authenticateToken, checkPermission } = require('../middleware/auth');
+const { deleteCache } = require('../services/cacheService');
 
 const router = express.Router();
 
@@ -56,9 +57,19 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
       await File.delete(file.id);
     }
 
+    // 删除相关的缓存文件
+    try {
+      console.log(`🧹 开始清理文件夹缓存: ${folderPath}`);
+      await deleteCache(folderPath);
+      console.log(`✅ 文件夹缓存清理完成: ${folderPath}`);
+    } catch (cacheError) {
+      console.warn('清理缓存失败:', cacheError.message);
+      // 缓存清理失败不影响主要的删除操作
+    }
+
     res.json({
       success: true,
-      message: '文件夹路径相关文件删除成功'
+      message: `文件夹路径相关文件删除成功，共删除 ${files.length} 个文件和相关缓存`
     });
   } catch (error) {
     console.error('删除文件夹错误:', error);

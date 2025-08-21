@@ -32,17 +32,31 @@ const App = () => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('user');
+    
     if (token) {
+      // 如果有保存的用户信息，先使用它
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (e) {
+          console.error('解析用户信息失败:', e);
+        }
+      }
+      
+      // 然后验证 token 是否有效
       axios.get('/api/user')
         .then(response => {
           if (response.data.success) {
             setUser(response.data.data);
+            localStorage.setItem('user', JSON.stringify(response.data.data));
             if (location.pathname === '/login') {
               navigate('/');
             }
           } else {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
+            setUser(null);
             navigate('/login');
           }
         })
@@ -50,9 +64,13 @@ const App = () => {
           console.error('验证用户失败:', error);
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          setUser(null);
           navigate('/login');
         });
     } else {
+      // 没有 token，清理用户状态并跳转到登录页
+      localStorage.removeItem('user');
+      setUser(null);
       navigate('/login');
     }
   }, [navigate, location.pathname]);

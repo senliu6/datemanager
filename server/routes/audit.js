@@ -7,7 +7,7 @@ const router = express.Router();
 // 获取操作记录
 router.get('/logs', authenticateToken, checkPermission('settings'), async (req, res) => {
   try {
-    if (req.user.role !== '管理员') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: '仅管理员可查看操作记录' });
     }
     
@@ -37,7 +37,7 @@ router.get('/logs', authenticateToken, checkPermission('settings'), async (req, 
 // 删除所有操作记录
 router.delete('/logs', authenticateToken, checkPermission('settings'), async (req, res) => {
   try {
-    if (req.user.role !== '管理员') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: '仅管理员可删除操作记录' });
     }
     await deleteAllAuditLogs();
