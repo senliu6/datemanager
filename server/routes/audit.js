@@ -1,5 +1,5 @@
 const express = require('express');
-const { findAllAuditLogs, deleteAllAuditLogs } = require('../models/auditLog');
+const { findAllAuditLogs, deleteAllAuditLogs, logAction } = require('../models/auditLog');
 const { authenticateToken, checkPermission } = require('../middleware/auth');
 
 const router = express.Router();
@@ -29,6 +29,33 @@ router.get('/logs', authenticateToken, checkPermission('settings'), async (req, 
     res.status(500).json({
       success: false,
       message: '获取操作记录失败',
+      error: error.message,
+    });
+  }
+});
+
+// 记录操作日志
+router.post('/logs', authenticateToken, async (req, res) => {
+  try {
+    const { action, details, targetUser } = req.body;
+    
+    await logAction({
+      userId: req.user.id,
+      username: req.user.username,
+      action,
+      details,
+      ipAddress: req.ip,
+    });
+    
+    res.json({
+      success: true,
+      message: '操作记录已保存',
+    });
+  } catch (error) {
+    console.error('记录操作日志失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '记录操作日志失败',
       error: error.message,
     });
   }

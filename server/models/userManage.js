@@ -62,6 +62,12 @@ const User = {
                     reject(err);
                     return;
                 }
+                
+                // 使用前端传入的权限，如果没有则给默认的概览权限
+                const permissions = user.permissions && user.permissions.length > 0 
+                    ? user.permissions 
+                    : ['overview'];
+                
                 const sql = `
           INSERT INTO users (username, password, role, department, email, status, permissions, isAdmin)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -73,7 +79,7 @@ const User = {
                     user.department || '',
                     user.email || '',
                     user.status || '启用',
-                    JSON.stringify(user.permissions || []),
+                    JSON.stringify(permissions),
                     user.role === '管理员' ? 1 : 0
                 ];
                 db.run(sql, params, function(err) {
@@ -151,6 +157,10 @@ const User = {
                     resolve(null);
                     return;
                 }
+                
+                // 如果更新了角色但没有更新权限，保持现有权限不变
+                // 权限应该由前端明确指定，不再自动分配
+                
                 const sets = Object.keys(updates_filtered).map(key => {
                     if (key === 'permissions') {
                         updates_filtered[key] = JSON.stringify(updates_filtered[key]);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Button, Table, message, Modal, Space, Form, Input, Select, DatePicker, Row, Col, Descriptions, Tag, Divider } from 'antd';
+import { Card, Button, Table, message, Modal, Space, Form, Input, Select, DatePicker, Row, Col, Descriptions, Tag, Tabs } from 'antd';
 import { SearchOutlined, ReloadOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import axios from '../util/axios';
 import moment from 'moment';
@@ -10,6 +10,13 @@ const Settings = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [systemInfo, setSystemInfo] = useState(null);
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
   const [form] = Form.useForm();
 
   const fetchAuditLogs = async (filters = {}) => {
@@ -37,6 +44,11 @@ const Settings = () => {
 
       if (response.data.success) {
         setLogs(response.data.data);
+        // 更新分页信息
+        setPagination(prev => ({
+          ...prev,
+          total: response.data.data.length
+        }));
       } else {
         message.error(response.data.message);
       }
@@ -48,8 +60,27 @@ const Settings = () => {
     }
   };
 
+  // 获取系统信息
+  const fetchSystemInfo = async () => {
+    setSystemLoading(true);
+    try {
+      const response = await axios.get('/api/system/info');
+      if (response.data.success) {
+        setSystemInfo(response.data.data);
+      } else {
+        message.error('获取系统信息失败');
+      }
+    } catch (error) {
+      console.error('获取系统信息失败:', error);
+      message.error('获取系统信息失败');
+    } finally {
+      setSystemLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAuditLogs();
+    fetchSystemInfo();
   }, []);
 
   // 处理筛选
@@ -60,7 +91,13 @@ const Settings = () => {
   // 重置筛选
   const handleReset = () => {
     form.resetFields();
+    setPagination(prev => ({ ...prev, current: 1 }));
     fetchAuditLogs();
+  };
+
+  // 处理分页变化
+  const handleTableChange = (paginationInfo) => {
+    setPagination(paginationInfo);
   };
 
   const handleDeleteLogs = async () => {
@@ -96,6 +133,10 @@ const Settings = () => {
           access_data: '访问数据',
           upload_file: '上传文件',
           delete_file: '删除文件',
+          delete_folder: '删除文件夹',
+          create_user: '创建用户',
+          update_user: '更新用户',
+          delete_user: '删除用户',
         };
         return actionMap[action] || action;
       },
@@ -125,205 +166,188 @@ const Settings = () => {
     { label: '访问数据', value: 'access_data' },
     { label: '上传文件', value: 'upload_file' },
     { label: '删除文件', value: 'delete_file' },
+    { label: '删除文件夹', value: 'delete_folder' },
+    { label: '创建用户', value: 'create_user' },
+    { label: '更新用户', value: 'update_user' },
+    { label: '删除用户', value: 'delete_user' },
   ];
 
-  // 版本信息
-  const versionInfo = {
-    name: 'LeRobot数据管理系统',
-    version: '1.0.0',
-    buildDate: '2024-01-15',
-    description: '机器人数据集管理和可视化平台',
-    author: '开发团队',
-    dependencies: {
-      react: '^18.2.0',
-      antd: '^5.26.1',
-      'react-three-fiber': '^8.18.0',
-      'plotly.js': '^3.0.1'
-    }
-  };
+  // Tab项配置
+  const tabItems = [
+    {
+      key: 'system',
+      label: (
+        <span>
+          <InfoCircleOutlined />
+          系统信息
+        </span>
+      ),
+      children: (
+        <Card>
+          {systemLoading ? (
+            <div style={{ textAlign: 'center', padding: '50px' }}>
+              加载系统信息中...
+            </div>
+          ) : systemInfo ? (
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Descriptions title="应用信息" bordered size="small" column={1}>
+                  <Descriptions.Item label="应用名称">
+                    <Tag color="blue">{systemInfo.application.name}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="版本号">
+                    <Tag color="green">v{systemInfo.application.version}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="应用描述">
+                    {systemInfo.application.description}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="开发团队">
+                    {systemInfo.application.author}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Col>
+              <Col span={12}>
+                <Descriptions title="服务器信息" bordered size="small" column={1}>
+                  <Descriptions.Item label="启动时间">
+                    {systemInfo.server.startTime}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="运行时长">
+                    <Tag color="orange">{systemInfo.server.uptime}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Node.js版本">
+                    <Tag color="green">{systemInfo.server.nodeVersion}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="服务器平台">
+                    {systemInfo.server.platform} ({systemInfo.server.arch})
+                  </Descriptions.Item>
+                  <Descriptions.Item label="进程ID">
+                    {systemInfo.server.pid}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Col>
+            </Row>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '50px' }}>
+              无法获取系统信息
+            </div>
+          )}
+        </Card>
+      ),
+    },
+    {
+      key: 'logs',
+      label: '操作记录',
+      children: (
+        <div>
+          {/* 筛选表单 */}
+          <Card title="筛选条件" style={{ marginBottom: 16 }}>
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={handleSearch}
+            >
+              <Row gutter={16}>
+                <Col span={6}>
+                  <Form.Item
+                    label="用户名"
+                    name="username"
+                  >
+                    <Input placeholder="请输入用户名" />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item
+                    label="操作类型"
+                    name="actions"
+                  >
+                    <Select
+                      mode="multiple"
+                      placeholder="请选择操作类型"
+                      allowClear
+                      options={actionOptions}
+                      maxTagCount="responsive"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    label="时间范围"
+                    name="dateRange"
+                  >
+                    <RangePicker
+                      style={{ width: '100%' }}
+                      placeholder={['开始时间', '结束时间']}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={4}>
+                  <Form.Item label=" ">
+                    <Space>
+                      <Button
+                        type="primary"
+                        htmlType="submit"
+                        icon={<SearchOutlined />}
+                        loading={loading}
+                      >
+                        搜索
+                      </Button>
+                      <Button
+                        icon={<ReloadOutlined />}
+                        onClick={handleReset}
+                      >
+                        重置
+                      </Button>
+                    </Space>
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Form>
+          </Card>
 
-  // 获取系统运行时信息
-  const getRuntimeInfo = () => {
-    const now = new Date();
-    const uptime = now.getTime() - (performance.timeOrigin || 0);
-    const uptimeHours = Math.floor(uptime / (1000 * 60 * 60));
-    const uptimeMinutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-    
-    return {
-      currentTime: now.toLocaleString('zh-CN'),
-      uptime: `${uptimeHours}小时${uptimeMinutes}分钟`,
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      language: navigator.language
-    };
-  };
-
-  const runtimeInfo = getRuntimeInfo();
+          <Card
+            title="操作记录"
+            extra={
+              <Button
+                type="primary"
+                danger
+                onClick={() => setDeleteModalVisible(true)}
+                disabled={logs.length === 0}
+              >
+                清空记录
+              </Button>
+            }
+          >
+            <Table
+              columns={columns}
+              dataSource={logs}
+              rowKey="id"
+              loading={loading}
+              pagination={{
+                ...pagination,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条记录`,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                onChange: (page, pageSize) => {
+                  setPagination(prev => ({ ...prev, current: page, pageSize }));
+                },
+                onShowSizeChange: (current, size) => {
+                  setPagination(prev => ({ ...prev, current: 1, pageSize: size }));
+                }
+              }}
+              onChange={handleTableChange}
+            />
+          </Card>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div>
-      {/* 版本信息 */}
-      <Card 
-        title={
-          <Space>
-            <InfoCircleOutlined />
-            版本信息
-          </Space>
-        } 
-        style={{ marginBottom: 16 }}
-      >
-        <Row gutter={[16, 16]}>
-          <Col span={12}>
-            <Descriptions title="系统信息" bordered size="small" column={1}>
-              <Descriptions.Item label="系统名称">
-                <Tag color="blue">{versionInfo.name}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="版本号">
-                <Tag color="green">v{versionInfo.version}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="构建日期">
-                {versionInfo.buildDate}
-              </Descriptions.Item>
-              <Descriptions.Item label="系统描述">
-                {versionInfo.description}
-              </Descriptions.Item>
-              <Descriptions.Item label="开发团队">
-                {versionInfo.author}
-              </Descriptions.Item>
-            </Descriptions>
-          </Col>
-          <Col span={12}>
-            <Descriptions title="运行环境" bordered size="small" column={1}>
-              <Descriptions.Item label="当前时间">
-                {runtimeInfo.currentTime}
-              </Descriptions.Item>
-              <Descriptions.Item label="运行时长">
-                {runtimeInfo.uptime}
-              </Descriptions.Item>
-              <Descriptions.Item label="操作系统">
-                {runtimeInfo.platform}
-              </Descriptions.Item>
-              <Descriptions.Item label="浏览器语言">
-                {runtimeInfo.language}
-              </Descriptions.Item>
-              <Descriptions.Item label="浏览器信息">
-                <div style={{ wordBreak: 'break-all', fontSize: '12px' }}>
-                  {runtimeInfo.userAgent.substring(0, 80)}...
-                </div>
-              </Descriptions.Item>
-            </Descriptions>
-          </Col>
-        </Row>
-        
-        <Divider />
-        
-        <Row gutter={[16, 16]}>
-          <Col span={24}>
-            <Descriptions title="核心依赖" bordered size="small" column={4}>
-              {Object.entries(versionInfo.dependencies).map(([name, version]) => (
-                <Descriptions.Item key={name} label={name}>
-                  <Tag color="cyan">{version}</Tag>
-                </Descriptions.Item>
-              ))}
-            </Descriptions>
-          </Col>
-        </Row>
+      <Tabs defaultActiveKey="system" items={tabItems} />
 
-
-      </Card>
-
-      {/* 筛选表单 */}
-      <Card title="筛选条件" style={{ marginBottom: 16 }}>
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSearch}
-        >
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item
-                label="用户名"
-                name="username"
-              >
-                <Input placeholder="请输入用户名" />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item
-                label="操作类型"
-                name="actions"
-              >
-                <Select
-                  mode="multiple"
-                  placeholder="请选择操作类型"
-                  allowClear
-                  options={actionOptions}
-                  maxTagCount="responsive"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label="时间范围"
-                name="dateRange"
-              >
-                <RangePicker
-                  style={{ width: '100%' }}
-                  placeholder={['开始时间', '结束时间']}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={4}>
-              <Form.Item label=" ">
-                <Space>
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    icon={<SearchOutlined />}
-                    loading={loading}
-                  >
-                    搜索
-                  </Button>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={handleReset}
-                  >
-                    重置
-                  </Button>
-                </Space>
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Card>
-
-      <Card
-        title="操作记录"
-        extra={
-          <Button
-            type="primary"
-            danger
-            onClick={() => setDeleteModalVisible(true)}
-            disabled={logs.length === 0}
-          >
-            清空记录
-          </Button>
-        }
-      >
-        <Table
-          columns={columns}
-          dataSource={logs}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条记录`
-          }}
-        />
-      </Card>
-
+      {/* 删除操作记录确认模态框 */}
       <Modal
         title="确认删除"
         open={deleteModalVisible}

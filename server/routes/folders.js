@@ -4,6 +4,7 @@ const path = require('path');
 const File = require('../models/file');
 const { authenticateToken, checkPermission } = require('../middleware/auth');
 const { deleteCache } = require('../services/cacheService');
+const { logAction } = require('../models/auditLog');
 
 const router = express.Router();
 
@@ -65,6 +66,19 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
     } catch (cacheError) {
       console.warn('清理缓存失败:', cacheError.message);
       // 缓存清理失败不影响主要的删除操作
+    }
+
+    // 记录删除文件夹操作
+    try {
+      await logAction({
+        userId: req.user.id,
+        username: req.user.username,
+        action: 'delete_folder',
+        details: `删除文件夹: ${folderPath}，包含 ${files.length} 个文件`,
+        ipAddress: req.ip,
+      });
+    } catch (logError) {
+      console.warn('记录操作日志失败:', logError);
     }
 
     res.json({

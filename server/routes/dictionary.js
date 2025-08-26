@@ -70,7 +70,7 @@ router.get('/', authenticateToken, checkPermission('data'), async (req, res) => 
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'access_dictionary',
+      action: '访问字典列表',
       details: `访问字典列表 - 页码: ${page}, 搜索: ${search || '无'}`,
       ipAddress: req.ip,
     });
@@ -105,7 +105,7 @@ router.post('/', authenticateToken, checkPermission('data'), async (req, res) =>
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'add_dictionary',
+      action: '添加字典条目',
       details: `添加字典条目: ${english} -> ${chinese}`,
       ipAddress: req.ip,
     });
@@ -162,7 +162,7 @@ router.put('/:id', authenticateToken, checkPermission('data'), async (req, res) 
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'update_dictionary',
+      action: '更新字典条目',
       details: `更新字典条目: ${english} -> ${chinese}`,
       ipAddress: req.ip,
     });
@@ -219,7 +219,7 @@ router.delete('/:id', authenticateToken, checkPermission('data'), async (req, re
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'delete_dictionary',
+      action: '删除字典条目',
       details: `删除字典条目: ${dictionary.english} -> ${dictionary.chinese}`,
       ipAddress: req.ip,
     });
@@ -259,7 +259,7 @@ router.delete('/', authenticateToken, checkPermission('data'), async (req, res) 
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'batch_delete_dictionary',
+      action: '批量删除字典条目',
       details: `批量删除字典条目: ${deletedCount} 个`,
       ipAddress: req.ip,
     });
@@ -410,7 +410,7 @@ router.post('/import', authenticateToken, checkPermission('data'), async (req, r
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'import_dictionary',
+      action: '批量导入字典数据',
       details: `批量导入字典数据: 成功 ${result.successCount} 个，失败 ${result.failedCount} 个，重复 ${duplicates.length} 个，验证错误 ${errors.length} 个`,
       ipAddress: req.ip,
     });
@@ -468,7 +468,7 @@ router.delete('/clear-all', authenticateToken, checkPermission('data'), async (r
     await logAction({
       userId: req.user.id,
       username: req.user.username,
-      action: 'clear_all_dictionary',
+      action: '清空所有字典数据',
       details: `清空所有字典数据: ${deletedCount} 个`,
       ipAddress: req.ip,
     });

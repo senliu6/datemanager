@@ -15,6 +15,7 @@ const userRoutes = require('./routes/users');
 const lerobotRoutes = require('./routes/lerobot');
 const statsRoutes = require('./routes/stats');
 const auditRoutes = require('./routes/audit');
+const uploadRecordRoutes = require('./routes/uploadRecords');
 
 const app = express();
 
@@ -30,6 +31,19 @@ app.use('/datasets', express.static(path.join(__dirname, '../datasets')));
 // 数据库连接和初始化
 connectDB();
 createAuditLogTable();
+
+// 初始化上传记录表
+const initializeUploadRecords = async () => {
+  try {
+    const UploadRecord = require('./models/uploadRecord');
+    console.log('上传记录表初始化成功');
+  } catch (error) {
+    console.error('初始化上传记录表失败:', error);
+  }
+};
+
+// 延迟初始化上传记录表
+setTimeout(initializeUploadRecords, 1000);
 
 // 初始化字典表
 const initializeDictionary = async () => {
@@ -60,8 +74,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/lerobot', lerobotRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/upload-records', uploadRecordRoutes);
 app.use('/api/dictionary', require('./routes/dictionary'));
 app.use('/api/remote-sync', require('./routes/remoteSync'));
+app.use('/api/system', require('./routes/system'));
 
 // 添加直接的上传路由，方便前端调用
 const upload = require('./middleware/upload');
