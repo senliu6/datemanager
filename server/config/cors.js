@@ -3,10 +3,16 @@ const cors = require('cors');
 // 动态获取允许的源
 const getAllowedOrigins = () => {
   const origins = [
+    // HTTP 地址
     'http://localhost:3000',
     'http://localhost:3001',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
+    // HTTPS 地址
+    'https://localhost:3000',
+    'https://localhost:3443',
+    'https://127.0.0.1:3000',
+    'https://127.0.0.1:3443',
   ];
   
   // 添加当前机器的IP地址
@@ -16,8 +22,12 @@ const getAllowedOrigins = () => {
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
+        // HTTP 地址
         origins.push(`http://${iface.address}:3000`);
         origins.push(`http://${iface.address}:3001`);
+        // HTTPS 地址
+        origins.push(`https://${iface.address}:3000`);
+        origins.push(`https://${iface.address}:3443`);
       }
     }
   }
@@ -37,8 +47,8 @@ module.exports = cors({
       return callback(null, true);
     }
     
-    // 允许本地开发环境的任何端口
-    if (origin.match(/^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+):\d+$/)) {
+    // 允许本地开发环境的任何端口（HTTP 和 HTTPS）
+    if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+):\d+$/)) {
       return callback(null, true);
     }
     

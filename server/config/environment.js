@@ -37,8 +37,8 @@ const config = {
     // HTTPS 配置
     ENABLE_HTTPS: process.env.ENABLE_HTTPS === 'true',
     HTTP_REDIRECT: process.env.HTTP_REDIRECT === 'true',
-    SSL_KEY_PATH: process.env.SSL_KEY_PATH || '../ssl/server.key',
-    SSL_CERT_PATH: process.env.SSL_CERT_PATH || '../ssl/server.crt',
+    SSL_KEY_PATH: process.env.SSL_KEY_PATH || './ssl/server.key',
+    SSL_CERT_PATH: process.env.SSL_CERT_PATH || './ssl/server.crt',
 
     // URL 配置 - 根据环境自动生成
     get FRONTEND_URL() {

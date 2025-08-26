@@ -1,22 +1,21 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
 
 export default defineConfig(() => {
   // 从环境变量获取配置，使用默认值
   const isHttps = process.env.ENABLE_HTTPS === 'true'
-  const backendPort = isHttps ? (parseInt(process.env.HTTPS_PORT) || 3443) : (parseInt(process.env.PORT) || 3001)
+  const backendPort = isHttps ? 3443 : 3001  // HTTPS 使用 3443，HTTP 使用 3001
   const protocol = isHttps ? 'https' : 'http'
   const backendTarget = `${protocol}://localhost:${backendPort}`
   
   console.log(`🔧 Vite 代理配置: ${backendTarget}`)
   console.log(`🔧 HTTPS 模式: ${isHttps}`)
   
-  return {
-    plugins: [react()],
-    server: {
-      port: 3000,
-      host: true,
-      proxy: {
+  const serverConfig = {
+    port: 3000,
+    host: true,
+    proxy: {
         '/api': {
           target: backendTarget,
           changeOrigin: true,
@@ -37,7 +36,24 @@ export default defineConfig(() => {
           }
         }
       }
-    },
+    }
+  
+  // 如果启用 HTTPS，配置前端 HTTPS
+  if (isHttps) {
+    try {
+      serverConfig.https = {
+        key: fs.readFileSync('./ssl/server.key'),
+        cert: fs.readFileSync('./ssl/server.crt')
+      }
+      console.log('🔒 前端 HTTPS 配置成功')
+    } catch (error) {
+      console.warn('⚠️  前端 HTTPS 配置失败，使用 HTTP:', error.message)
+    }
+  }
+
+  return {
+    plugins: [react()],
+    server: serverConfig,
     build: {
       outDir: 'dist',
       sourcemap: false, // 禁用sourcemap减少内存使用
