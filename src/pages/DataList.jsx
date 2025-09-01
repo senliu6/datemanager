@@ -309,7 +309,7 @@ const DataList = () => {
             return;
         }
 
-        const baseUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+        const baseUrl = ''; // Use relative URL to go through Vite proxy
         
         // 计算总文件大小
         const totalSizeMB = selectedFiles.reduce((sum, file) => {
@@ -349,8 +349,6 @@ const DataList = () => {
                 throw new Error(errorMessage);
             }
 
-            const contentLength = response.headers.get('Content-Length');
-            const total = contentLength ? parseInt(contentLength) : null;
             
             if (!response.body) {
                 throw new Error('响应体为空');
@@ -370,16 +368,6 @@ const DataList = () => {
                 
                 chunks.push(value);
                 received += value.length;
-                
-                // 更新进度
-                if (total) {
-                    const progress = Math.round((received / total) * 100);
-                    hideProgress();
-                    hideProgress = message.loading(`下载进度: ${progress}% (${(received / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB)`, 0);
-                } else {
-                    hideProgress();
-                    hideProgress = message.loading(`已下载: ${(received / 1024 / 1024).toFixed(1)}MB`, 0);
-                }
             }
 
             // 创建下载链接
@@ -431,7 +419,7 @@ const DataList = () => {
 
     // 单文件下载函数 - 带进度显示
     const handleSingleDownload = async (record) => {
-        const baseUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+        const baseUrl = ''; // Use relative URL to go through Vite proxy
         const fileId = record.key.split('/').pop();
         
         // 创建进度提示
@@ -451,9 +439,6 @@ const DataList = () => {
                 throw new Error(`服务器返回错误: ${response.status} ${response.statusText}`);
             }
 
-            const contentLength = response.headers.get('Content-Length');
-            const total = contentLength ? parseInt(contentLength) : null;
-            
             if (!response.body) {
                 throw new Error('响应体为空');
             }
@@ -475,12 +460,7 @@ const DataList = () => {
                 const now = Date.now();
                 if (now - lastUpdateTime > 500) { // 每500ms更新一次
                     hideProgress();
-                    if (total) {
-                        const progress = Math.round((received / total) * 100);
-                        hideProgress = message.loading(`下载进度: ${progress}% (${(received / 1024 / 1024).toFixed(1)}MB / ${(total / 1024 / 1024).toFixed(1)}MB)`, 0);
-                    } else {
-                        hideProgress = message.loading(`已下载: ${(received / 1024 / 1024).toFixed(1)}MB`, 0);
-                    }
+
                     lastUpdateTime = now;
                 }
             }

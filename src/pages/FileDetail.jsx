@@ -57,7 +57,7 @@ const FileDetail = () => {
                     // 再次检查服务器状态
                     const serverOk = await checkServerStatus();
                     if (!serverOk) {
-                        setError('服务器连接失败，请确认：\n1. 后端服务器是否在运行\n2. 端口3001是否可访问\n3. 代理配置是否正确');
+                        setError('服务器连接失败，请确认：\n1. 后端服务器是否在运行\n2. 后端端口是否可访问\n3. 代理配置是否正确');
                     } else {
                         setError('网络连接失败，请稍后重试');
                     }
