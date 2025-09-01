@@ -190,54 +190,6 @@ router.put('/:id', authenticateToken, checkPermission('data'), async (req, res) 
   }
 });
 
-// 删除字典条目
-router.delete('/:id', authenticateToken, checkPermission('data'), async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const dictionary = await Dictionary.findById(id);
-    if (!dictionary) {
-      return res.status(404).json({
-        success: false,
-        message: '字典条目不存在'
-      });
-    }
-    
-    const deleted = await Dictionary.delete(id);
-    
-    if (!deleted) {
-      return res.status(500).json({
-        success: false,
-        message: '删除字典条目失败'
-      });
-    }
-    
-    // 清除缓存
-    clearCache();
-    
-    // 记录删除操作
-    await logAction({
-      userId: req.user.id,
-      username: req.user.username,
-      action: '删除字典条目',
-      details: `删除字典条目: ${dictionary.english} -> ${dictionary.chinese}`,
-      ipAddress: req.ip,
-    });
-    
-    res.json({
-      success: true,
-      message: '字典条目删除成功'
-    });
-  } catch (error) {
-    console.error('删除字典条目失败:', error);
-    res.status(500).json({
-      success: false,
-      message: '删除字典条目失败',
-      error: error.message
-    });
-  }
-});
-
 // 批量删除字典条目
 router.delete('/', authenticateToken, checkPermission('data'), async (req, res) => {
   try {
@@ -277,6 +229,8 @@ router.delete('/', authenticateToken, checkPermission('data'), async (req, res) 
     });
   }
 });
+
+
 
 // 增加使用频次
 router.post('/:id/frequency', authenticateToken, checkPermission('data'), async (req, res) => {
@@ -456,7 +410,7 @@ router.post('/import', authenticateToken, checkPermission('data'), async (req, r
   }
 });
 
-// 清空所有字典数据
+// 清空所有字典数据 - 必须在 /:id 路由之前定义
 router.delete('/clear-all', authenticateToken, checkPermission('data'), async (req, res) => {
   try {
     const deletedCount = await Dictionary.deleteAll();
@@ -482,6 +436,54 @@ router.delete('/clear-all', authenticateToken, checkPermission('data'), async (r
     res.status(500).json({
       success: false,
       message: '清空字典数据失败',
+      error: error.message
+    });
+  }
+});
+
+// 删除字典条目 - 必须在具体路径路由之后定义
+router.delete('/:id', authenticateToken, checkPermission('data'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const dictionary = await Dictionary.findById(id);
+    if (!dictionary) {
+      return res.status(404).json({
+        success: false,
+        message: '字典条目不存在'
+      });
+    }
+    
+    const deleted = await Dictionary.delete(id);
+    
+    if (!deleted) {
+      return res.status(500).json({
+        success: false,
+        message: '删除字典条目失败'
+      });
+    }
+    
+    // 清除缓存
+    clearCache();
+    
+    // 记录删除操作
+    await logAction({
+      userId: req.user.id,
+      username: req.user.username,
+      action: '删除字典条目',
+      details: `删除字典条目: ${dictionary.english} -> ${dictionary.chinese}`,
+      ipAddress: req.ip,
+    });
+    
+    res.json({
+      success: true,
+      message: '字典条目删除成功'
+    });
+  } catch (error) {
+    console.error('删除字典条目失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '删除字典条目失败',
       error: error.message
     });
   }
