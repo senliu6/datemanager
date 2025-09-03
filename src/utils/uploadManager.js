@@ -13,10 +13,10 @@ class UploadManager {
         this.isPaused = false;
         this.batchSize = 8;
         this.listeners = new Set();
-        
+
         // 从 sessionStorage 恢复状态
         this.restoreState();
-        
+
         // 定期保存状态
         setInterval(() => this.saveState(), 5000);
     }
@@ -52,7 +52,7 @@ class UploadManager {
         const failed = this.failedFiles.length;
         const uploading = this.activeUploads.size;
         const queued = this.uploadQueue.length;
-        
+
         return {
             total,
             completed,
@@ -64,8 +64,8 @@ class UploadManager {
             isPaused: this.isPaused,
             batchSize: this.batchSize
         };
-    } 
-   // 计算总体进度
+    }
+    // 计算总体进度
     calculateProgress(total, completed) {
         if (total === 0) return 0;
         const completedProgress = completed * 100;
@@ -118,7 +118,7 @@ class UploadManager {
                 this.batchSize = state.batchSize || 8;
                 this.completedFiles = state.completedFiles || [];
                 this.failedFiles = state.failedFiles || [];
-                
+
                 // 将未完成的文件标记为失败（因为File对象丢失）
                 if (state.queuedFiles && state.queuedFiles.length > 0) {
                     const lostFiles = state.queuedFiles.map(file => ({
@@ -132,25 +132,45 @@ class UploadManager {
         } catch (error) {
             console.error('恢复上传状态失败:', error);
         }
-    } 
-   // 添加文件到上传队列
-    addFiles(files, sessionId, folderPath = '未分类') {
+    }
+    // 添加文件到上传队列
+    addFiles(files, sessionId, defaultFolderPath = '未分类') {
+        // 如果是新的会话，清理之前的上传状态
+        if (this.currentSessionId !== sessionId) {
+            this.clearCurrentSession();
+        }
+
         this.currentSessionId = sessionId;
-        const processedFiles = files.map(file => ({
-            uid: `file-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            originFileObj: file,
-            status: 'queued',
-            folderPath: folderPath
-        }));
-        
+        const processedFiles = files.map(file => {
+            // 优先使用文件的webkitRelativePath来确定文件夹路径
+            let fileFolderPath = defaultFolderPath;
+
+            if (file.webkitRelativePath) {
+                // 如果有相对路径，使用路径的目录部分
+                const pathParts = file.webkitRelativePath.split('/');
+                if (pathParts.length > 1) {
+                    // 移除文件名，保留目录路径
+                    pathParts.pop();
+                    fileFolderPath = pathParts.join('/');
+                }
+            }
+
+            return {
+                uid: `file-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                originFileObj: file,
+                status: 'queued',
+                folderPath: fileFolderPath
+            };
+        });
+
         this.uploadQueue.push(...processedFiles);
         this.saveState();
         this.notifyListeners();
         this.processQueue();
-        
+
         return processedFiles.length;
     }
 
@@ -208,7 +228,7 @@ class UploadManager {
                 if (error.response?.data?.message) {
                     errorMessage = error.response.data.message;
                 }
-                
+
                 this.failedFiles.push({
                     ...fileItem,
                     error: errorMessage,
@@ -230,8 +250,8 @@ class UploadManager {
                 setTimeout(() => this.processQueue(), 10);
             }
         }
-    } 
-   // 暂停上传
+    }
+    // 暂停上传
     pause() {
         this.isPaused = true;
         this.abortControllers.forEach(controller => {
@@ -257,7 +277,7 @@ class UploadManager {
     retryFailed() {
         const retryableFiles = this.failedFiles.filter(f => f.originFileObj);
         const nonRetryableFiles = this.failedFiles.filter(f => !f.originFileObj);
-        
+
         if (retryableFiles.length === 0) {
             return { success: false, message: '无法重试失败的文件，因为原始文件对象已丢失' };
         }
@@ -268,16 +288,16 @@ class UploadManager {
         this.notifyListeners();
         this.processQueue();
 
-        return { 
-            success: true, 
+        return {
+            success: true,
             message: `开始重试 ${retryableFiles.length} 个失败的文件`,
             retryCount: retryableFiles.length,
             skippedCount: nonRetryableFiles.length
         };
     }
 
-    // 清除所有文件
-    clearAll() {
+    // 清除当前会话的上传状态（但保留sessionStorage）
+    clearCurrentSession() {
         this.abortControllers.forEach(controller => {
             try {
                 controller.abort();
@@ -292,9 +312,15 @@ class UploadManager {
         this.completedFiles = [];
         this.failedFiles = [];
         this.uploadProgress = {};
-        this.currentSessionId = null;
         this.isPaused = false;
-        
+
+        this.notifyListeners();
+    }
+
+    // 清除所有文件
+    clearAll() {
+        this.clearCurrentSession();
+        this.currentSessionId = null;
         sessionStorage.removeItem('uploadManagerState');
         this.notifyListeners();
     }
@@ -312,19 +338,19 @@ class UploadManager {
 
         // 检查是否所有文件都已完成（成功或失败）
         const isAllCompleted = this.uploadQueue.length === 0 && this.activeUploads.size === 0;
-        
+
         if (isAllCompleted) {
             try {
                 const totalFiles = this.completedFiles.length + this.failedFiles.length;
                 const completedFiles = this.completedFiles.length;
                 const failedFiles = this.failedFiles.length;
-                
+
                 // 计算已完成文件的大小
                 const completedSize = this.completedFiles
                     .reduce((sum, file) => sum + (file.size || 0), 0);
 
                 const status = failedFiles > 0 ? 'completed_with_errors' : 'completed';
-                
+
                 await axios.put(`/api/upload-records/session/${this.currentSessionId}`, {
                     status: status,
                     completed_files: completedFiles,

@@ -4,3 +4,5 @@ server/node_modules
 dist
 server/cache
 /datemanager-20250808_152806.tar.gz
+/backend.log
+/frontend.log

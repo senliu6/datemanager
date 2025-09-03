@@ -78,6 +78,7 @@ const UploadPage = () => {
                             writable: false
                         });
 
+
                         files.push(file);
                         totalFiles++;
                         totalSize += file.size || 0;

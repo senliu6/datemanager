@@ -25,6 +25,7 @@ router.post('/upload', authenticateToken, checkPermission('upload'), upload.arra
       const folderPath = req.body.folderPath || (file.webkitRelativePath ? path.dirname(file.webkitRelativePath) : '未分类');
       
       console.log(`开始上传文件: ${file.originalname}, 大小: ${file.size} bytes`);
+
       
       // 保存文件到本地
       const uploadsDir = config.UPLOADS_PATH;

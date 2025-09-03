@@ -49,6 +49,7 @@ const DataList = () => {
                 path: file.path,
                 folderPath: file.folderPath || '未分类',
             }));
+
             const groupedData = groupFilesByFolder(files);
             setData(groupedData);
             setFilteredData(groupedData);
@@ -139,14 +140,20 @@ const DataList = () => {
         files.forEach((file) => {
             const parts = file.folderPath.split('/').filter((p) => p);
             let currentLevel = tree;
+            
+            // 遍历路径的每一部分，构建文件夹结构
             parts.forEach((part, index) => {
                 if (!currentLevel[part]) {
                     currentLevel[part] = {children: {}, files: []};
                 }
+                
+                // 如果是最后一级路径，将文件添加到这个文件夹
                 if (index === parts.length - 1) {
                     currentLevel[part].files.push(file);
+                } else {
+                    // 否则继续向下一级
+                    currentLevel = currentLevel[part].children;
                 }
-                currentLevel = currentLevel[part].children;
             });
         });
 
@@ -172,15 +179,19 @@ const DataList = () => {
                     }
                 }
                 
+                // 构建子项：包括子文件夹和文件
+                const childFolders = Object.keys(children).length > 0 ? flattenTree(children, fullKey) : [];
+                const childFiles = files.map((file) => ({
+                    ...file,
+                    key: `${fullKey}/${file.key}`
+                }));
+                
                 const result = {
                     key: fullKey,
                     folder: folder,
                     uploader: folderUploader,
                     uploadTime: folderUploadTime,
-                    children: files.length === 0 ? flattenTree(children, fullKey) : files.map((file) => ({
-                        ...file,
-                        key: `${fullKey}/${file.key}`
-                    })),
+                    children: [...childFolders, ...childFiles],
                 };
                 return result;
             });
