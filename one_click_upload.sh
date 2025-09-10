@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ===========================================
-# 数据管理平台 - 超简单一键上传脚本
+# 数据管理平台 - 超简单一键上传脚本 (HTTPS版)
 # 功能：自动检测服务器，一键上传当前目录文件
 # 使用：将此脚本放在要上传的文件夹中，运行即可
 # ===========================================
@@ -9,7 +9,7 @@
 # 固定配置
 UPLOAD_USER="upload"
 UPLOAD_PASS="upload123"
-WEB_PORT="3001"
+WEB_PORT="3443"  # 修改为后端API的HTTPS端口
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +26,7 @@ NC='\033[0m'
 clear
 echo -e "${BLUE}"
 echo "================================================"
-echo "        数据管理平台 - 一键上传工具"
+echo "        数据管理平台 - 一键上传工具 (HTTPS)"
 echo "================================================"
 echo -e "${NC}"
 echo ""
@@ -50,7 +50,7 @@ if [ "$CONFIG_CHOICE" = "2" ]; then
     
     # 循环输入直到连接成功或用户选择退出
     while true; do
-        read -p "请输入服务器IP地址 (输入 'q' 退出): " MANUAL_SERVER_IP
+        read -p "请输入服务器IP地址或域名 (输入 'q' 退出): " MANUAL_SERVER_IP
         
         if [ "$MANUAL_SERVER_IP" = "q" ] || [ "$MANUAL_SERVER_IP" = "Q" ]; then
             echo "用户取消操作，退出"
@@ -58,25 +58,21 @@ if [ "$CONFIG_CHOICE" = "2" ]; then
         fi
         
         if [ -z "$MANUAL_SERVER_IP" ]; then
-            echo -e "${YELLOW}⚠️  IP地址不能为空，请重新输入${NC}"
+            echo -e "${YELLOW}⚠️  地址不能为空，请重新输入${NC}"
             continue
         fi
         
-        # 简单的IP格式验证
-        if ! echo "$MANUAL_SERVER_IP" | grep -E '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^localhost$' > /dev/null; then
-            echo -e "${YELLOW}⚠️  IP地址格式不正确，请输入正确的IP地址（如：192.168.1.100）${NC}"
-            continue
-        fi
+        SERVER_IP="$MANUAL_SERVER_IP"
         
-        echo -n "测试 $MANUAL_SERVER_IP:$WEB_PORT ... "
+        echo -n "测试 $SERVER_IP:$WEB_PORT ... "
         
         # 测试连接并显示详细错误信息
-        HEALTH_RESPONSE=$(timeout 10 curl -s "http://$MANUAL_SERVER_IP:$WEB_PORT/api/health" 2>&1)
+        # -k 参数用于跳过SSL证书验证
+        HEALTH_RESPONSE=$(timeout 10 curl -k -s "https://$SERVER_IP:$WEB_PORT/api/health" 2>&1)
         CURL_EXIT_CODE=$?
         
         if [ $CURL_EXIT_CODE -eq 0 ] && echo "$HEALTH_RESPONSE" | grep -q "healthy"; then
             echo -e "${GREEN}✅ 服务器连接成功${NC}"
-            SERVER_IP="$MANUAL_SERVER_IP"
             break
         else
             echo -e "${RED}❌ 连接失败${NC}"
@@ -86,7 +82,7 @@ if [ "$CONFIG_CHOICE" = "2" ]; then
             case $CURL_EXIT_CODE in
                 7)
                     echo "  - 无法连接到服务器，请检查："
-                    echo "    1. IP地址是否正确"
+                    echo "    1. IP地址或域名是否正确"
                     echo "    2. 服务器是否已启动"
                     echo "    3. 网络连接是否正常"
                     ;;
@@ -95,6 +91,12 @@ if [ "$CONFIG_CHOICE" = "2" ]; then
                     echo "    1. 服务器响应缓慢"
                     echo "    2. 网络延迟过高"
                     echo "    3. 防火墙阻止连接"
+                    ;;
+                60)
+                    echo "  - SSL证书验证失败，可能原因："
+                    echo "    1. 服务器使用了自签名证书"
+                    echo "    2. 证书已过期或无效"
+                    echo "  （已自动跳过证书验证，如果仍失败，请检查网络）"
                     ;;
                 *)
                     echo "  - 连接错误 (代码: $CURL_EXIT_CODE)"
@@ -106,9 +108,9 @@ if [ "$CONFIG_CHOICE" = "2" ]; then
             
             echo ""
             echo "建议："
-            echo "  1. 确认服务器IP地址正确"
+            echo "  1. 确认服务器地址正确"
             echo "  2. 确认数据管理平台服务已启动"
-            echo "  3. 尝试在浏览器中访问 http://$MANUAL_SERVER_IP:$WEB_PORT"
+            echo "  3. 尝试在浏览器中访问 https://$SERVER_IP:$WEB_PORT"
             echo "  4. 检查防火墙设置"
             echo ""
         fi
@@ -152,7 +154,8 @@ else
         echo -n "测试 $ip:$WEB_PORT ... "
         
         # 测试Web服务健康检查
-        if timeout 3 curl -s "http://$ip:$WEB_PORT/api/health" 2>/dev/null | grep -q "healthy"; then
+        # -k 参数用于跳过SSL证书验证
+        if timeout 3 curl -k -s "https://$ip:$WEB_PORT/api/health" 2>/dev/null | grep -q "healthy"; then
             echo -e "${GREEN}✅ 发现数据管理平台${NC}"
             SERVER_IP="$ip"
             break
@@ -164,7 +167,7 @@ else
     # 如果没有自动检测到，手动输入
     if [ -z "$SERVER_IP" ]; then
         echo ""
-        echo -e "${YELLOW}⚠️  自动检测失败，请手动输入服务器IP地址${NC}"
+        echo -e "${YELLOW}⚠️  自动检测失败，请手动输入服务器IP地址或域名${NC}"
         echo ""
         read -p "请输入服务器IP: " SERVER_IP
         
@@ -177,7 +180,7 @@ else
 fi
 
 echo ""
-echo "🌐 目标服务器: http://$SERVER_IP:$WEB_PORT"
+echo "🌐 目标服务器: https://$SERVER_IP:$WEB_PORT"
 echo ""
 
 # 扫描本地文件（递归扫描所有文件夹）
@@ -242,7 +245,7 @@ echo -e "${YELLOW}⚠️  准备上传当前目录的所有文件到数据管理
 echo ""
 echo "确认信息："
 echo "  📁 本地目录: $SCRIPT_DIR"
-echo "  🌐 服务器: http://$SERVER_IP:$WEB_PORT"
+echo "  🌐 服务器: https://$SERVER_IP:$WEB_PORT"
 echo "  📄 文件数量: $FILE_COUNT"
 echo "  📊 总大小: $SIZE_STR"
 echo ""
@@ -260,15 +263,15 @@ echo ""
 
 # 测试服务器连接
 echo "🔗 测试服务器连接..."
-
-if timeout 5 curl -s "http://$SERVER_IP:$WEB_PORT/api/health" | grep -q "healthy"; then
+# 新增：测试连接时使用HTTPS，并跳过证书验证
+if timeout 5 curl -k -s "https://$SERVER_IP:$WEB_PORT/api/health" | grep -q "healthy"; then
     echo -e "${GREEN}✅ 服务器连接正常${NC}"
 else
     echo -e "${RED}❌ 无法连接到服务器${NC}"
     echo ""
     echo "可能的原因："
-    echo "1. 服务器IP地址错误"
-    echo "2. 网络连接问题"
+    echo "1. 服务器IP地址或域名错误"
+    echo "2. 网络连接问题或防火墙阻止"
     echo "3. 服务器未启动"
     echo ""
     read -p "按回车键退出..."
@@ -312,11 +315,11 @@ for file in "${FILE_LIST[@]}"; do
     echo -n "📤 检查 $filename (${folder_path}) ... "
     
     # 先检查文件是否已存在
-    CHECK_RESPONSE=$(curl -s -X POST \
+    CHECK_RESPONSE=$(curl -k -s -X POST \
         -H "X-Simple-Auth: $AUTH_HEADER" \
         -H "Content-Type: application/json" \
         -d "{\"fileName\":\"$filename\",\"fileSize\":$file_size,\"folderPath\":\"$folder_path\"}" \
-        "http://$SERVER_IP:$WEB_PORT/api/check-file" 2>/dev/null)
+        "https://$SERVER_IP:$WEB_PORT/api/check-file" 2>/dev/null)
     
     # 检查文件是否已存在
     if echo "$CHECK_RESPONSE" | grep -q '"exists":true'; then
@@ -328,11 +331,11 @@ for file in "${FILE_LIST[@]}"; do
     echo -n "上传中 ... "
     
     # 使用curl上传文件，保持文件夹结构
-    RESPONSE=$(curl -s -X POST \
+    RESPONSE=$(curl -k -s -X POST \
         -H "X-Simple-Auth: $AUTH_HEADER" \
         -F "file=@$file" \
         -F "folderPath=$folder_path" \
-        "http://$SERVER_IP:$WEB_PORT/api/upload" 2>/dev/null)
+        "https://$SERVER_IP:$WEB_PORT/api/upload" 2>/dev/null)
     
     if echo "$RESPONSE" | grep -q '"success":true'; then
         echo -e "${GREEN}✅${NC}"
@@ -369,7 +372,7 @@ echo "  ✅ 成功: $SUCCESS_COUNT 个文件"
 echo "  ❌ 失败: $FAILED_COUNT 个文件"
 echo "  ⏱️  耗时: ${DURATION}秒"
 echo "  📁 本地目录: $SCRIPT_DIR"
-echo "  🌐 服务器: http://$SERVER_IP:$WEB_PORT"
+echo "  🌐 服务器: https://$SERVER_IP:$WEB_PORT"
 
 if [ $FAILED_COUNT -gt 0 ]; then
     echo ""
@@ -381,7 +384,7 @@ fi
 
 echo ""
 echo "💡 提示："
-echo "  - 可以在浏览器中访问 http://$SERVER_IP:$WEB_PORT 查看上传的文件"
+echo "  - 可以在浏览器中访问 https://$SERVER_IP:$WEB_PORT 查看上传的文件"
 echo "  - 如需重新上传失败的文件，请再次运行此脚本"
 
 # 记录上传信息到日志文件
@@ -390,7 +393,7 @@ echo "  - 如需重新上传失败的文件，请再次运行此脚本"
     echo "上传记录 - $(date '+%Y-%m-%d %H:%M:%S')"
     echo "========================================"
     echo "本地目录: $SCRIPT_DIR"
-    echo "服务器: http://$SERVER_IP:$WEB_PORT"
+    echo "服务器: https://$SERVER_IP:$WEB_PORT"
     echo "成功文件: $SUCCESS_COUNT"
     echo "失败文件: $FAILED_COUNT"
     echo "总耗时: ${DURATION}秒"
